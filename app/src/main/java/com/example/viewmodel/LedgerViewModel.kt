@@ -1,0 +1,157 @@
+package com.example.viewmodel
+
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.data.LedgerEntry
+import com.example.data.LedgerRepository
+import com.example.domain.LedgerCalculator
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
+
+    // Form live inputs
+    val previousPointsText = MutableStateFlow("")
+    val availablePointsText = MutableStateFlow("")
+    val previousBalanceText = MutableStateFlow("")
+    val walletBalanceText = MutableStateFlow("")
+    val deficitSpendingNotesText = MutableStateFlow("")
+
+    // Retrieve historical list
+    val entries: StateFlow<List<LedgerEntry>> = repository.allEntries
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    // Derived real-time calculations
+    val liveCalculation: StateFlow<LedgerCalculator.CalculationResult> = combine(
+        previousPointsText,
+        availablePointsText,
+        previousBalanceText,
+        walletBalanceText
+    ) { prevPts, availPts, prevBal, wallBal ->
+        val pPts = prevPts.toIntOrNull() ?: 0
+        val aPts = availPts.toIntOrNull() ?: 0
+        val pBal = prevBal.toIntOrNull() ?: 0
+        val wBal = wallBal.toIntOrNull() ?: 0
+        LedgerCalculator.calculate(
+            previousPoints = pPts,
+            availablePoints = aPts,
+            previousBalance = pBal,
+            walletBalance = wBal
+        )
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = LedgerCalculator.calculate(0, 0, 0, 0)
+    )
+
+    /**
+     * Checks if form fields are empty or invalid
+     */
+    val isFormValid: StateFlow<Boolean> = combine(
+        previousPointsText,
+        availablePointsText,
+        previousBalanceText,
+        walletBalanceText
+    ) { prevPts, availPts, prevBal, wallBal ->
+        prevPts.isNotBlank() &&
+        availPts.isNotBlank() &&
+        prevBal.isNotBlank() &&
+        wallBal.isNotBlank() &&
+        prevPts.toIntOrNull() != null &&
+        availPts.toIntOrNull() != null &&
+        prevBal.toIntOrNull() != null &&
+        wallBal.toIntOrNull() != null
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    /**
+     * Utility to populate details using previous record, to save users typing effort
+     */
+    fun prefillFromLatest() {
+        val latest = entries.value.firstOrNull() ?: return
+        previousPointsText.value = latest.availablePoints.toString()
+        previousBalanceText.value = latest.walletBalance.toString()
+    }
+
+    /**
+     * Saves user's record and calculations to local database
+     */
+    fun saveEntry() {
+        val pPts = previousPointsText.value.toIntOrNull() ?: 0
+        val aPts = availablePointsText.value.toIntOrNull() ?: 0
+        val pBal = previousBalanceText.value.toIntOrNull() ?: 0
+        val wBal = walletBalanceText.value.toIntOrNull() ?: 0
+        val notes = deficitSpendingNotesText.value
+
+        val calc = LedgerCalculator.calculate(pPts, aPts, pBal, wBal)
+
+        val newEntry = LedgerEntry(
+            timestamp = System.currentTimeMillis(),
+            previousPoints = pPts,
+            availablePoints = aPts,
+            transactionType = calc.transactionType,
+            transactionAmount = calc.transactionAmount,
+            previousBalance = pBal,
+            expectedBalance = calc.expectedBalance,
+            walletBalance = wBal,
+            deficit = calc.deficit,
+            deficitSpendingNotes = notes
+        )
+
+        viewModelScope.launch {
+            repository.insert(newEntry)
+            resetForm()
+        }
+    }
+
+    /**
+     * Removes standard ledger entry
+     */
+    fun deleteEntry(id: Int) {
+        viewModelScope.launch {
+            repository.deleteById(id)
+        }
+    }
+
+    /**
+     * Clears all ledger entries
+     */
+    fun deleteAllEntries() {
+        viewModelScope.launch {
+            repository.deleteAll()
+        }
+    }
+
+    /**
+     * Resets visual state fields back to defaults
+     */
+    fun resetForm() {
+        previousPointsText.value = ""
+        availablePointsText.value = ""
+        previousBalanceText.value = ""
+        walletBalanceText.value = ""
+        deficitSpendingNotesText.value = ""
+    }
+}
+
+class LedgerViewModelFactory(private val repository: LedgerRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(LedgerViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return LedgerViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
