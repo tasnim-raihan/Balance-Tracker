@@ -512,13 +512,19 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
 
     val walletBalance = latest?.walletBalance ?: 0
     val totalDeficit = entries.sumOf { it.deficit }
+    
+    // Calculates Total Income and Total Expenses based on Ledger Entries
+    val totalIncome = entries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
+    val totalExpenses = entries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
+    
     val salesCount = entries.count { it.transactionType == "Sale" }
     val productInHandCount = entries.count { it.transactionType == "Product in Hand" }
 
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(16.dp),
+            .padding(16.dp)
+            .testTag("ledger_metrics_panel"),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
         ),
@@ -529,29 +535,31 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "OVERVIEW SUMMARY",
+                text = "POINTS LEDGER SUMMARY",
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
 
+            // Current Balance Big Display
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Wallet Balance Info
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = "Current Wallet Balance",
+                        text = "Current Balance",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Spacer(modifier = Modifier.height(2.dp))
                     Text(
                         text = if (entries.isEmpty()) "--" else usdFormatter.format(walletBalance),
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.headlineSmall,
                         fontWeight = FontWeight.Black,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.testTag("ledger_current_balance")
                     )
                 }
 
@@ -575,9 +583,55 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
                     }
                     Text(
                         text = usdFormatter.format(totalDeficit),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Black,
-                        color = deficitColor
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = deficitColor,
+                        modifier = Modifier.testTag("ledger_total_deficit")
+                    )
+                }
+            }
+
+            Divider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
+
+            // Row for Total Income & Total Expenses
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                // Total Income Column
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Total Income",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = usdFormatter.format(totalIncome),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF028A3C),
+                        modifier = Modifier.testTag("ledger_total_income")
+                    )
+                }
+
+                // Total Expenses Column
+                Column(
+                    modifier = Modifier.weight(1f),
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = "Total Expenses",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = usdFormatter.format(totalExpenses),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC07000),
+                        modifier = Modifier.testTag("ledger_total_expenses")
                     )
                 }
             }
@@ -594,7 +648,7 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
                     icon = Icons.Default.List
                 )
                 MetricMiniItem(
-                    label = "Sales Tracked",
+                    label = "Sales",
                     value = salesCount.toString(),
                     icon = Icons.Default.KeyboardArrowUp,
                     tint = Color(0xFF028A3C)
