@@ -6,6 +6,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModelProvider
 import com.example.data.LedgerDatabase
 import com.example.data.LedgerRepository
@@ -25,13 +28,25 @@ class MainActivity : ComponentActivity() {
         val repository = LedgerRepository(database.ledgerDao())
 
         // 2. Initialize ViewModel with custom Factory
-        val factory = LedgerViewModelFactory(repository)
+        val factory = LedgerViewModelFactory(repository, applicationContext)
         val viewModel = ViewModelProvider(this, factory)[LedgerViewModel::class.java]
 
         setContent {
-            BalanceTrackerTheme {
+            val sharedPref = remember { applicationContext.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE) }
+            val systemTheme = androidx.compose.foundation.isSystemInDarkTheme()
+            var isDarkTheme by remember { androidx.compose.runtime.mutableStateOf(sharedPref.getBoolean("is_dark_theme", systemTheme)) }
+
+            val toggleTheme: () -> Unit = {
+                val newTheme = !isDarkTheme
+                isDarkTheme = newTheme
+                sharedPref.edit().putBoolean("is_dark_theme", newTheme).apply()
+            }
+
+            BalanceTrackerTheme(darkTheme = isDarkTheme) {
                 LedgerDashboard(
                     viewModel = viewModel,
+                    isDarkTheme = isDarkTheme,
+                    onThemeToggle = toggleTheme,
                     modifier = Modifier.fillMaxSize()
                 )
             }

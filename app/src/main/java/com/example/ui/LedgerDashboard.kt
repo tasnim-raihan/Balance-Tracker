@@ -14,6 +14,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,6 +36,13 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.widget.Toast
+import android.content.Context
+import android.content.ClipboardManager
+import android.content.ClipData
+import android.content.Intent
 import com.example.data.LedgerEntry
 import com.example.data.FinancialTransaction
 import com.example.data.WalletAccount
@@ -49,6 +57,8 @@ import kotlin.math.abs
 @Composable
 fun LedgerDashboard(
     viewModel: LedgerViewModel,
+    isDarkTheme: Boolean = false,
+    onThemeToggle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val entries by viewModel.entries.collectAsStateWithLifecycle()
@@ -60,10 +70,55 @@ fun LedgerDashboard(
     var isDeleteAllConfirmOpen by remember { mutableStateOf(false) }
     var isDeleteAllTxConfirmOpen by remember { mutableStateOf(false) }
 
+    var ledgerSearchQuery by remember { mutableStateOf("") }
+    var ledgerTypeFilter by remember { mutableStateOf("All") }
+    var ledgerSortOption by remember { mutableStateOf("Newest First") }
+    var isLedgerFiltersExpanded by remember { mutableStateOf(false) }
+    var detailedEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+
+    val context = LocalContext.current
+    var isExportDialogOpen by remember { mutableStateOf(false) }
+    var exportTargetType by remember { mutableStateOf("Ledger") } 
+    var csvTextToWrite by remember { mutableStateOf("") }
+    var jsonTextToWrite by remember { mutableStateOf("") }
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(csvTextToWrite.toByteArray())
+                    outputStream.flush()
+                }
+                Toast.makeText(context, "$exportTargetType exported successfully!", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Export failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+    val createJsonLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.write(jsonTextToWrite.toByteArray())
+                    outputStream.flush()
+                }
+                Toast.makeText(context, "$exportTargetType backup exported successfully!", Toast.LENGTH_LONG).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Backup failed: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     var filterCategory by remember { mutableStateOf("All") }
     var filterDateRangePreset by remember { mutableStateOf("All Time") }
     var customStartDate by remember { mutableStateOf("") }
     var customEndDate by remember { mutableStateOf("") }
+    var isFabExpanded by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -88,7 +143,30 @@ fun LedgerDashboard(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onThemeToggle,
+                        modifier = Modifier.testTag("theme_toggle_button")
+                    ) {
+                        Icon(
+                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                            contentDescription = if (isDarkTheme) "Switch to Light Mode" else "Switch to Dark Mode",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     if (selectedTab == 0 && entries.isNotEmpty()) {
+                        IconButton(
+                            onClick = { 
+                                exportTargetType = "Ledger"
+                                isExportDialogOpen = true 
+                            },
+                            modifier = Modifier.testTag("export_ledger_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export Ledger CSV",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         IconButton(
                             onClick = { isDeleteAllConfirmOpen = true },
                             modifier = Modifier.testTag("delete_all_button")
@@ -100,6 +178,19 @@ fun LedgerDashboard(
                             )
                         }
                     } else if (selectedTab == 1 && transactions.isNotEmpty()) {
+                        IconButton(
+                            onClick = { 
+                                exportTargetType = "Transactions"
+                                isExportDialogOpen = true 
+                            },
+                            modifier = Modifier.testTag("export_transactions_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Share,
+                                contentDescription = "Export Transactions CSV",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
                         IconButton(
                             onClick = { isDeleteAllTxConfirmOpen = true },
                             modifier = Modifier.testTag("delete_all_tx_button")
@@ -119,25 +210,54 @@ fun LedgerDashboard(
         },
         floatingActionButton = {
             if (selectedTab < 2) {
-                FloatingActionButton(
-                    onClick = {
-                        if (selectedTab == 0) {
-                            viewModel.resetForm()
-                            isAddDialogOpen = true
-                        } else {
-                            viewModel.resetTxForm()
-                            isAddTxDialogOpen = true
-                        }
-                    },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.testTag(if (selectedTab == 0) "add_ledger_fab" else "add_tx_fab")
+                Column(
+                    horizontalAlignment = Alignment.End,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Add,
-                        contentDescription = if (selectedTab == 0) "Add New Points Entry" else "Add New Financial Transaction",
-                        modifier = Modifier.size(28.dp)
-                    )
+                    if (isFabExpanded && selectedTab == 0) {
+                        ExtendedFloatingActionButton(
+                            onClick = {
+                                isFabExpanded = false
+                                viewModel.resetTxForm()
+                                isAddTxDialogOpen = true
+                            },
+                            icon = { Icon(Icons.Default.Add, "Add Transaction") },
+                            text = { Text("Log Transaction") },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        ExtendedFloatingActionButton(
+                            onClick = {
+                                isFabExpanded = false
+                                viewModel.resetForm()
+                                isAddDialogOpen = true
+                            },
+                            icon = { Icon(Icons.Default.Add, "Add Ledger Entry") },
+                            text = { Text("Log Points Entry") },
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+
+                    FloatingActionButton(
+                        onClick = {
+                            if (selectedTab == 0) {
+                                isFabExpanded = !isFabExpanded
+                            } else {
+                                viewModel.resetTxForm()
+                                isAddTxDialogOpen = true
+                            }
+                        },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        contentColor = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.testTag(if (selectedTab == 0) "expand_fab" else "add_tx_fab")
+                    ) {
+                        Icon(
+                            imageVector = if (selectedTab == 0 && isFabExpanded) Icons.Default.Close else Icons.Default.Add,
+                            contentDescription = if (selectedTab == 0) "Expand Options" else "Add New Financial Transaction",
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
                 }
             }
         }
@@ -148,61 +268,50 @@ fun LedgerDashboard(
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            // Tab Selector Switches
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp))
-                    .padding(4.dp),
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            // Improved Tab Selector using Material 3 TabRow
+            PrimaryTabRow(
+                selectedTabIndex = selectedTab,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                containerColor = Color.Transparent,
+                divider = {}
             ) {
                 listOf("Points Ledger", "Manual Transactions", "Wallet Accounts").forEachIndexed { index, title ->
-                    val isSelected = selectedTab == index
-                    val containerColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
-                    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(containerColor)
-                            .clickable { selectedTab = index }
-                            .padding(vertical = 10.dp)
-                            .testTag("tab_selector_$index"),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = when (index) {
-                                    0 -> Icons.Default.ShoppingCart
-                                    1 -> Icons.Default.Star
-                                    else -> Icons.Default.List
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp),
-                                tint = contentColor
-                            )
+                    Tab(
+                        selected = selectedTab == index,
+                        onClick = { selectedTab = index },
+                        text = {
                             Text(
                                 text = title,
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = contentColor,
-                                maxLines = 1,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
+                                textAlign = TextAlign.Center,
+                                maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
-                        }
-                    }
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = when (index) {
+                                    0 -> if (selectedTab == index) Icons.Default.ShoppingCart else Icons.Outlined.ShoppingCart
+                                    1 -> if (selectedTab == index) Icons.Default.Star else Icons.Outlined.Star
+                                    else -> if (selectedTab == index) Icons.Default.List else Icons.Outlined.List
+                                },
+                                contentDescription = null,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        },
+                        selectedContentColor = MaterialTheme.colorScheme.primary,
+                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.testTag("tab_selector_$index")
+                    )
                 }
             }
 
             if (selectedTab == 0) {
                 // Points Ledger View
                 MetricsSummaryPanel(entries)
+                DailySummaryWidget(entries)
+                MonthlySummaryWidget(entries)
 
                 if (entries.isEmpty()) {
                     EmptyStateView {
@@ -210,30 +319,328 @@ fun LedgerDashboard(
                         isAddDialogOpen = true
                     }
                 } else {
-                    Text(
-                        text = "Ledger History",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        color = MaterialTheme.colorScheme.onBackground
-                    )
+                    val filteredEntries = remember(entries, ledgerSearchQuery, ledgerTypeFilter, ledgerSortOption) {
+                        entries.filter { entry ->
+                            val matchesSearch = entry.deficitSpendingNotes.contains(ledgerSearchQuery, ignoreCase = true) ||
+                                    entry.transactionType.contains(ledgerSearchQuery, ignoreCase = true)
+                            val matchesType = when (ledgerTypeFilter) {
+                                "All" -> true
+                                "Sale" -> entry.transactionType == "Sale"
+                                "Product in Hand" -> entry.transactionType == "Product in Hand"
+                                "Deficit Only" -> entry.deficit > 0
+                                "Loss Only" -> entry.loss > 0
+                                else -> true
+                            }
+                            matchesSearch && matchesType
+                        }.sortedWith { a, b ->
+                            when (ledgerSortOption) {
+                                "Newest First" -> b.timestamp.compareTo(a.timestamp)
+                                "Oldest First" -> a.timestamp.compareTo(b.timestamp)
+                                "Deficit (High to Low)" -> b.deficit.compareTo(a.deficit)
+                                "Net Change (High to Low)" -> {
+                                    val netA = abs(a.previousPoints - a.availablePoints)
+                                    val netB = abs(b.previousPoints - b.availablePoints)
+                                    netB.compareTo(netA)
+                                }
+                                else -> b.timestamp.compareTo(a.timestamp)
+                            }
+                        }
+                    }
 
-                    LazyColumn(
+                    // Ledger History Title and Search Bar Row
+                    Column(
                         modifier = Modifier
-                            .fillMaxSize()
-                            .weight(1f)
-                            .testTag("ledger_list"),
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(
-                            items = entries,
-                            key = { it.id }
-                        ) { entry ->
-                            LedgerCard(
-                                entry = entry,
-                                onDelete = { viewModel.deleteEntry(entry.id) }
-                            )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = "Ledger History",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onBackground
+                                )
+                                Surface(
+                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                    shape = RoundedCornerShape(100.dp)
+                                ) {
+                                    Text(
+                                        text = "${filteredEntries.size}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+
+                            // Filter toggle button
+                            IconButton(
+                                onClick = { isLedgerFiltersExpanded = !isLedgerFiltersExpanded },
+                                modifier = Modifier.testTag("ledger_filter_toggle")
+                            ) {
+                                Icon(
+                                    imageVector = if (isLedgerFiltersExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.Settings,
+                                    contentDescription = "Toggle Ledger Filtering Options",
+                                    tint = if (isLedgerFiltersExpanded || ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
+                                        MaterialTheme.colorScheme.primary
+                                    } else {
+                                        MaterialTheme.colorScheme.outline
+                                    }
+                                )
+                            }
+                        }
+
+                        // Collapsible Filter Panel
+                        AnimatedVisibility(
+                            visible = isLedgerFiltersExpanded || ledgerSearchQuery.isNotEmpty(),
+                            enter = expandVertically() + fadeIn(),
+                            exit = shrinkVertically() + fadeOut()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)), RoundedCornerShape(12.dp))
+                                    .padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                // Search Input
+                                OutlinedTextField(
+                                    value = ledgerSearchQuery,
+                                    onValueChange = { ledgerSearchQuery = it },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .testTag("ledger_search_field"),
+                                    placeholder = { Text("Search notes, types...") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = "Search"
+                                        )
+                                    },
+                                    trailingIcon = if (ledgerSearchQuery.isNotEmpty()) {
+                                        {
+                                            IconButton(onClick = { ledgerSearchQuery = "" }) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Clear,
+                                                    contentDescription = "Clear Search"
+                                                )
+                                            }
+                                        }
+                                    } else null,
+                                    singleLine = true,
+                                    textStyle = MaterialTheme.typography.bodyMedium,
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                    )
+                                )
+
+                                // Filtering row
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    // Filter dropdown / selector
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "FILTER BY TYPE",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(bottom = 4.dp)
+                                        )
+                                        var isTypeDropdownExpanded by remember { mutableStateOf(false) }
+                                        Box(modifier = Modifier.fillMaxWidth()) {
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { isTypeDropdownExpanded = true }
+                                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
+                                                    .padding(10.dp),
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surface
+                                            ) {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = ledgerTypeFilter,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Icon(
+                                                        imageVector = Icons.Default.ArrowDropDown,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            DropdownMenu(
+                                                expanded = isTypeDropdownExpanded,
+                                                onDismissRequest = { isTypeDropdownExpanded = false }
+                                            ) {
+                                                listOf("All", "Sale", "Product in Hand", "Deficit Only", "Loss Only").forEach { type ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(type, style = MaterialTheme.typography.bodyMedium) },
+                                                        onClick = {
+                                                            ledgerTypeFilter = type
+                                                            isTypeDropdownExpanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Sorting option dropdown / selector
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "SORT BY",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.padding(bottom = 4.dp)
+                                        )
+                                        var isSortDropdownExpanded by remember { mutableStateOf(false) }
+                                        Box(modifier = Modifier.fillMaxWidth()) {
+                                            Surface(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .clickable { isSortDropdownExpanded = true }
+                                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
+                                                    .padding(10.dp),
+                                                shape = RoundedCornerShape(8.dp),
+                                                color = MaterialTheme.colorScheme.surface
+                                            ) {
+                                                Row(
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(
+                                                        text = ledgerSortOption,
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
+                                                    )
+                                                    Icon(
+                                                        imageVector = Icons.Default.ArrowDropDown,
+                                                        contentDescription = null,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            DropdownMenu(
+                                                expanded = isSortDropdownExpanded,
+                                                onDismissRequest = { isSortDropdownExpanded = false }
+                                            ) {
+                                                listOf("Newest First", "Oldest First", "Deficit (High to Low)", "Net Change (High to Low)").forEach { option ->
+                                                    DropdownMenuItem(
+                                                        text = { Text(option, style = MaterialTheme.typography.bodyMedium) },
+                                                        onClick = {
+                                                            ledgerSortOption = option
+                                                            isSortDropdownExpanded = false
+                                                        }
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Reset filters row
+                                if (ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
+                                    TextButton(
+                                        onClick = {
+                                            ledgerTypeFilter = "All"
+                                            ledgerSortOption = "Newest First"
+                                            ledgerSearchQuery = ""
+                                        },
+                                        modifier = Modifier.align(Alignment.End)
+                                    ) {
+                                        Text(
+                                            text = "Clear active filters",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (filteredEntries.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                                .padding(32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Search,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                                Text(
+                                    text = "No matching records found",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "Try adjusting your search notes, types, or sort order",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .weight(1f)
+                                .testTag("ledger_list"),
+                            contentPadding = PaddingValues(bottom = 80.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            items(
+                                items = filteredEntries,
+                                key = { it.id }
+                            ) { entry ->
+                                LedgerCard(
+                                    entry = entry,
+                                    onEdit = {
+                                        viewModel.startEditingEntry(entry)
+                                        isAddDialogOpen = true
+                                    },
+                                    onDelete = { viewModel.deleteEntry(entry.id) },
+                                    onCardClick = {
+                                        detailedEntry = entry
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -409,6 +816,10 @@ fun LedgerDashboard(
                             ) { transaction ->
                                 TransactionCard(
                                     transaction = transaction,
+                                    onEdit = {
+                                        viewModel.startEditingTransaction(transaction)
+                                        isAddTxDialogOpen = true
+                                    },
                                     onDelete = { viewModel.deleteTransaction(transaction.id) }
                                 )
                             }
@@ -428,11 +839,31 @@ fun LedgerDashboard(
         }
     }
 
+    // Modal Detail Dialog (Points)
+    detailedEntry?.let { entry ->
+        LedgerDetailDialog(
+            entry = entry,
+            onDismiss = { detailedEntry = null },
+            onEdit = {
+                detailedEntry = null
+                viewModel.startEditingEntry(entry)
+                isAddDialogOpen = true
+            },
+            onDelete = {
+                detailedEntry = null
+                viewModel.deleteEntry(entry.id)
+            }
+        )
+    }
+
     // Modal Add Dialog (Points)
     if (isAddDialogOpen) {
         AddLedgerDialog(
             viewModel = viewModel,
-            onDismiss = { isAddDialogOpen = false },
+            onDismiss = {
+                viewModel.resetForm()
+                isAddDialogOpen = false
+            },
             onSave = {
                 viewModel.saveEntry()
                 isAddDialogOpen = false
@@ -444,7 +875,10 @@ fun LedgerDashboard(
     if (isAddTxDialogOpen) {
         AddTransactionDialog(
             viewModel = viewModel,
-            onDismiss = { isAddTxDialogOpen = false },
+            onDismiss = {
+                viewModel.resetTxForm()
+                isAddTxDialogOpen = false
+            },
             onSave = {
                 viewModel.saveTransaction()
                 isAddTxDialogOpen = false
@@ -503,6 +937,320 @@ fun LedgerDashboard(
             modifier = Modifier.testTag("delete_all_tx_dialog")
         )
     }
+
+    // Modal Export Dialog
+    if (isExportDialogOpen) {
+        val countStr = if (exportTargetType == "Ledger") "${entries.size} Records" else "${transactions.size} Transactions"
+        AlertDialog(
+            onDismissRequest = { isExportDialogOpen = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Text(
+                        text = "Export $exportTargetType Data",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Export your local record-keeping data as a Comma-Separated Values (CSV) sheet. This sheet can be imported directly into spreadsheets like Microsoft Excel or Google Sheets.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    // Diagnostic info card
+                    Surface(
+                        color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Active Dataset",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = if (exportTargetType == "Ledger") "Points Ledger Logs" else "Financial Income/Expense Logs",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                                )
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.primary)
+                                    .padding(vertical = 4.dp, horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = countStr,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onPrimary,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "CHOOSE EXPORT METHOD",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontWeight = FontWeight.Black
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        // SAVE AS FILE
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val csv = if (exportTargetType == "Ledger") generateLedgerCsv(entries) else generateTransactionsCsv(transactions)
+                                    csvTextToWrite = csv
+                                    val prefix = if (exportTargetType == "Ledger") "ledger_export_" else "transactions_export_"
+                                    val filename = "$prefix${System.currentTimeMillis()}.csv"
+                                    createDocumentLauncher.launch(filename)
+                                    isExportDialogOpen = false
+                                }
+                                .testTag("export_save_file_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.primaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Save as CSV File",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Save directly on your phone storage",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // BACKUP AS JSON
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val json = if (exportTargetType == "Ledger") generateLedgerJson(entries) else generateTransactionsJson(transactions)
+                                    jsonTextToWrite = json
+                                    val prefix = if (exportTargetType == "Ledger") "ledger_backup_" else "transactions_backup_"
+                                    val filename = "$prefix${System.currentTimeMillis()}.json"
+                                    createJsonLauncher.launch(filename)
+                                    isExportDialogOpen = false
+                                }
+                                .testTag("export_backup_json_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.tertiaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Build,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Backup as JSON File",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Download structured data for data recovery",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // SHARE VIA SEND
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val csv = if (exportTargetType == "Ledger") generateLedgerCsv(entries) else generateTransactionsCsv(transactions)
+                                    val intent = Intent(Intent.ACTION_SEND).apply {
+                                        type = "text/plain"
+                                        putExtra(Intent.EXTRA_SUBJECT, "Balance Tracker - $exportTargetType CSV Export")
+                                        putExtra(Intent.EXTRA_TEXT, csv)
+                                    }
+                                    context.startActivity(Intent.createChooser(intent, "Share CSV Export"))
+                                    isExportDialogOpen = false
+                                }
+                                .testTag("export_share_text_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.secondaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Share as Plain Text",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Send via E-mail, Notes, or messaging apps",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+
+                        // COPY TO CLIPBOARD
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    val csv = if (exportTargetType == "Ledger") generateLedgerCsv(entries) else generateTransactionsCsv(transactions)
+                                    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = ClipData.newPlainText("Balance Tracker CSV Export", csv)
+                                    clipboardManager.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copied CSV to Clipboard!", Toast.LENGTH_SHORT).show()
+                                    isExportDialogOpen = false
+                                }
+                                .testTag("export_copy_clipboard_card")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(36.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(MaterialTheme.colorScheme.tertiaryContainer),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.List,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Copy to Clipboard",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Paste directly into sheets or notepad",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        fontSize = 11.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { isExportDialogOpen = false },
+                    modifier = Modifier.testTag("export_close_button")
+                ) {
+                    Text("Close")
+                }
+            },
+            modifier = Modifier.testTag("export_data_dialog")
+        )
+    }
 }
 
 @Composable
@@ -512,23 +1260,25 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
 
     val walletBalance = latest?.walletBalance ?: 0
     val totalDeficit = entries.sumOf { it.deficit }
+    val totalLoss = entries.sumOf { it.loss }
     
     // Calculates Total Income and Total Expenses based on Ledger Entries
     val totalIncome = entries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
     val totalExpenses = entries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
     
-    val salesCount = entries.count { it.transactionType == "Sale" }
-    val productInHandCount = entries.count { it.transactionType == "Product in Hand" }
+    val salesVolume = entries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
+    val productInHandVolume = entries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
 
-    Card(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
             .padding(16.dp)
             .testTag("ledger_metrics_panel"),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 5.dp),
+        shape = RoundedCornerShape(20.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -591,6 +1341,57 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
                 }
             }
 
+            // Loss Section visual block
+            if (totalLoss != 0) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Loss Warning Icon",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "LOSS SECTION",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Black,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text(
+                                    text = "Unmatched remaining deficit loss",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontSize = 10.sp
+                                )
+                            }
+                        }
+                        Text(
+                            text = usdFormatter.format(totalLoss),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.testTag("ledger_total_loss")
+                        )
+                    }
+                }
+            }
+
             Divider(color = MaterialTheme.colorScheme.surfaceVariant, thickness = 1.dp)
 
             // Row for Total Income & Total Expenses
@@ -649,13 +1450,13 @@ fun MetricsSummaryPanel(entries: List<LedgerEntry>) {
                 )
                 MetricMiniItem(
                     label = "Sales",
-                    value = salesCount.toString(),
+                    value = salesVolume.toString(),
                     icon = Icons.Default.KeyboardArrowUp,
                     tint = Color(0xFF028A3C)
                 )
                 MetricMiniItem(
                     label = "Products in Hand",
-                    value = productInHandCount.toString(),
+                    value = productInHandVolume.toString(),
                     icon = Icons.Default.List,
                     tint = Color(0xFFC07000)
                 )
@@ -699,9 +1500,230 @@ fun MetricMiniItem(
 }
 
 @Composable
+fun DailySummaryWidget(entries: List<LedgerEntry>) {
+    val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    
+    val todayEntries = remember(entries) {
+        val todayCal = Calendar.getInstance()
+        val todayYear = todayCal.get(Calendar.YEAR)
+        val todayDay = todayCal.get(Calendar.DAY_OF_YEAR)
+        entries.filter { entry ->
+            val entryCal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
+            entryCal.get(Calendar.YEAR) == todayYear && entryCal.get(Calendar.DAY_OF_YEAR) == todayDay
+        }
+    }
+
+    val dailyIncome = todayEntries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
+    val dailyExpenses = todayEntries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
+    val dailyLoss = todayEntries.sumOf { it.loss }
+
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("daily_summary_widget"),
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.DateRange,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "TODAY's SUMMARY",
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Income",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = usdFormatter.format(dailyIncome),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF028A3C) // Green flavor
+                    )
+                }
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Expenses",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = usdFormatter.format(dailyExpenses),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFC07000) // Orange/Warn flavor
+                    )
+                }
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Loss",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f)
+                    )
+                    Text(
+                        text = usdFormatter.format(dailyLoss),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
+    var expanded by remember { mutableStateOf(false) }
+    val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    
+    val monthEntries = remember(entries) {
+        val todayCal = Calendar.getInstance()
+        val todayYear = todayCal.get(Calendar.YEAR)
+        val todayMonth = todayCal.get(Calendar.MONTH)
+        entries.filter { entry ->
+            val entryCal = Calendar.getInstance().apply { timeInMillis = entry.timestamp }
+            entryCal.get(Calendar.YEAR) == todayYear && entryCal.get(Calendar.MONTH) == todayMonth
+        }
+    }
+
+    val monthlyIncome = monthEntries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
+    val monthlyExpenses = monthEntries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
+    val monthlyNetProfit = monthlyIncome - monthlyExpenses
+    val monthlyLoss = monthEntries.sumOf { it.loss }
+
+    ElevatedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .testTag("monthly_summary_widget")
+            .clickable { expanded = !expanded },
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer
+        ),
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "THIS MONTH",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (expanded) "Collapse" else "Expand",
+                    tint = MaterialTheme.colorScheme.onTertiaryContainer
+                )
+            }
+
+            AnimatedVisibility(visible = expanded) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Net Profit",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = usdFormatter.format(monthlyNetProfit),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = if (monthlyNetProfit >= 0) Color(0xFF028A3C) else MaterialTheme.colorScheme.error
+                            )
+                        }
+                        
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Gross Income",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = usdFormatter.format(monthlyIncome),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
+                        
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Loss",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = usdFormatter.format(monthlyLoss),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun LedgerCard(
     entry: LedgerEntry,
-    onDelete: () -> Unit
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onCardClick: () -> Unit
 ) {
     val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
     val formattedDate = remember(entry.timestamp) {
@@ -711,16 +1733,17 @@ fun LedgerCard(
 
     var isMenuExpanded by remember { mutableStateOf(false) }
 
-    Card(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .clickable { onCardClick() }
             .testTag("ledger_card_${entry.id}"),
-        colors = CardDefaults.cardColors(
+        colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(12.dp)
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Column(
             modifier = Modifier
@@ -750,6 +1773,21 @@ fun LedgerCard(
                     // Transaction Type Badge
                     TransactionBadge(type = entry.transactionType)
 
+                    // Direct Edit Icon Button
+                    IconButton(
+                        onClick = onEdit,
+                        modifier = Modifier
+                            .size(24.dp)
+                            .testTag("edit_ledger_entry_${entry.id}")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Edit,
+                            contentDescription = "Edit Entry",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+
                     // Card operations menu
                     Box {
                         IconButton(
@@ -766,6 +1804,20 @@ fun LedgerCard(
                             expanded = isMenuExpanded,
                             onDismissRequest = { isMenuExpanded = false }
                         ) {
+                            DropdownMenuItem(
+                                text = { Text("Edit Entry") },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Default.Edit,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                },
+                                onClick = {
+                                    isMenuExpanded = false
+                                    onEdit()
+                                }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Delete Entry", color = MaterialTheme.colorScheme.error) },
                                 leadingIcon = {
@@ -822,6 +1874,10 @@ fun LedgerCard(
 
             // Deficit Highlight Row
             HighlightDeficitRow(entry.deficit, usdFormatter)
+
+            if (entry.loss != 0) {
+                HighlightLossRow(entry.loss, entry.declaredDeficit, usdFormatter)
+            }
 
             // Deficit Spending Notes (If present)
             if (entry.deficitSpendingNotes.isNotBlank()) {
@@ -984,6 +2040,56 @@ fun HighlightDeficitRow(deficit: Int, usdFormatter: NumberFormat) {
     }
 }
 
+@Composable
+fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat) {
+    val backgroundColor = Color(0xFFFDF2F0)
+    val textColor = MaterialTheme.colorScheme.error
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(backgroundColor)
+            .padding(vertical = 8.dp, horizontal = 12.dp)
+            .testTag("ledger_card_loss_row"),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = textColor,
+                modifier = Modifier.size(16.dp)
+            )
+            Column {
+                Text(
+                    text = "Deficit Discrepancy (Unexplained Loss)",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = textColor
+                )
+                Text(
+                    text = "Declared deficit of ${usdFormatter.format(declaredDeficit)} does not match total variance",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 10.sp
+                )
+            }
+        }
+        Text(
+            text = usdFormatter.format(loss),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Black,
+            color = textColor
+        )
+    }
+}
+
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
 @Composable
@@ -1090,10 +2196,28 @@ fun AddLedgerDialog(
     val prevBalance by viewModel.previousBalanceText.collectAsStateWithLifecycle()
     val walletBalance by viewModel.walletBalanceText.collectAsStateWithLifecycle()
     val notes by viewModel.deficitSpendingNotesText.collectAsStateWithLifecycle()
+    val declaredDeficit by viewModel.declaredDeficitText.collectAsStateWithLifecycle()
     val isFormValid by viewModel.isFormValid.collectAsStateWithLifecycle()
+    val editingEntryId by viewModel.editingEntryId.collectAsStateWithLifecycle()
+    val deficitFields by viewModel.deficitFields.collectAsStateWithLifecycle()
 
     val liveCalc by viewModel.liveCalculation.collectAsStateWithLifecycle()
     val entries by viewModel.entries.collectAsStateWithLifecycle()
+    val transactions by viewModel.transactions.collectAsStateWithLifecycle()
+    val ledgerTimestamp by viewModel.ledgerTimestampText.collectAsStateWithLifecycle()
+
+    val isTimestampValid = remember(ledgerTimestamp) {
+        if (ledgerTimestamp.isBlank()) true
+        else {
+            val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+            try {
+                val parsed = sdf.parse(ledgerTimestamp)
+                parsed != null && parsed.time <= System.currentTimeMillis()
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -1125,19 +2249,42 @@ fun AddLedgerDialog(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.List,
+                            imageVector = if (editingEntryId != null) Icons.Default.Edit else Icons.Default.List,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = "Add Ledger Record",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column {
+                            Text(
+                                text = if (editingEntryId != null) "Edit Ledger Record" else "Add Ledger Record",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val syncStatus by viewModel.draftSyncStatus.collectAsStateWithLifecycle()
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(100.dp))
+                                        .background(
+                                            if (syncStatus == "Draft Synced") Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                        )
+                                )
+                                Text(
+                                    text = syncStatus,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close dialog")
@@ -1177,6 +2324,90 @@ fun AddLedgerDialog(
                                 style = MaterialTheme.typography.labelMedium,
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+
+                    // Display Note with Last Transaction / Last Ledger entry
+                    val lastTx = transactions.firstOrNull()
+                    val lastEntry = entries.firstOrNull()
+                    if (lastTx != null || lastEntry != null) {
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().testTag("last_saved_info_block"),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(12.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "LAST SAVED DETAILS",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Black,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (lastTx != null) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = "Last Transaction Note:",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            text = lastTx.description.ifBlank { "(No notes)" } + " — $$${lastTx.amount} [${lastTx.category}] (${lastTx.date})",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+
+                                if (lastTx != null && lastEntry != null) {
+                                    HorizontalDivider(
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                                        thickness = 1.dp
+                                    )
+                                }
+
+                                if (lastEntry != null) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                        Text(
+                                            text = "Last Ledger Record Notes:",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                        Text(
+                                            text = lastEntry.deficitSpendingNotes.ifBlank { "(No deficit notes listed)" },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                        )
+                                        val entryDateLabelStr = remember(lastEntry.timestamp) {
+                                            java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault()).format(java.util.Date(lastEntry.timestamp))
+                                        }
+                                        Text(
+                                            text = "Recorded on $entryDateLabelStr (Deficit: $$${lastEntry.deficit})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
 
@@ -1277,7 +2508,143 @@ fun AddLedgerDialog(
                     }
 
                     Text(
-                        text = "3. Ledger Notes (Optional)",
+                        text = "3. Deficit Spending Breakdown & Calculator (Optional)",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Declare specific expenses (e.g. transport, meals) to justify the variance/deficit. These amounts are deducted from the deficit. The remaining balance is counted as Loss.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            deficitFields.forEachIndexed { index, field ->
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = field.description,
+                                        onValueChange = { viewModel.updateDeficitField(index, it, field.amount) },
+                                        label = { Text("Item Spent On") },
+                                        placeholder = { Text("e.g. Uber, Dinner") },
+                                        modifier = Modifier
+                                            .weight(1.5f)
+                                            .testTag("deficit_item_desc_$index"),
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    )
+
+                                    val isFieldAmtValid = remember(field.amount) {
+                                        field.amount.isBlank() || (field.amount.toIntOrNull()?.let { it >= 0 } ?: false)
+                                    }
+
+                                    OutlinedTextField(
+                                        value = field.amount,
+                                        onValueChange = { viewModel.updateDeficitField(index, field.description, it) },
+                                        label = { Text("Amount ($)") },
+                                        placeholder = { Text("e.g. 15") },
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .testTag("deficit_item_amt_$index"),
+                                        singleLine = true,
+                                        isError = !isFieldAmtValid,
+                                        keyboardOptions = KeyboardOptions(
+                                            keyboardType = KeyboardType.Number,
+                                            imeAction = ImeAction.Next
+                                        ),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    )
+
+                                    IconButton(
+                                        onClick = { viewModel.removeDeficitField(index) },
+                                        modifier = Modifier.testTag("delete_deficit_item_$index")
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Delete item",
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
+                            }
+
+                            Button(
+                                onClick = { viewModel.addDeficitField() },
+                                modifier = Modifier
+                                    .align(Alignment.End)
+                                    .testTag("add_deficit_field_button"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = "Add Item", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Spending Item", style = MaterialTheme.typography.labelMedium)
+                            }
+
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
+
+                            val totalVariance = liveCalc.deficit
+                            val explainedSum = deficitFields.sumOf { it.amount.toIntOrNull() ?: 0 }
+                            val remainingLoss = liveCalc.loss
+
+                            Column(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Total Variance (Deficit):", style = MaterialTheme.typography.bodyMedium)
+                                    Text("$${totalVariance}", fontWeight = FontWeight.Bold, color = if (totalVariance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Total Explained Breakdown:", style = MaterialTheme.typography.bodyMedium)
+                                    Text("$${explainedSum}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Unexplained Remaining (Loss):", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = "$${remainingLoss}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (remainingLoss > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Text(
+                        text = "4. Ledger Notes (Optional)",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -1298,6 +2665,88 @@ fun AddLedgerDialog(
                         )
                     )
 
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Text(
+                        text = "5. Custom Record Date & Time Timestamp",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedTextField(
+                        value = ledgerTimestamp,
+                        onValueChange = { viewModel.ledgerTimestampText.value = it },
+                        label = { Text("Timestamp (yyyy-MM-dd HH:mm)") },
+                        placeholder = { Text("e.g. 2026-06-13 11:20") },
+                        isError = !isTimestampValid,
+                        supportingText = if (!isTimestampValid) {
+                            { Text("Format must be yyyy-MM-dd HH:mm and not in the future", color = MaterialTheme.colorScheme.error) }
+                        } else null,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Text,
+                            imeAction = ImeAction.Done
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("input_ledger_timestamp"),
+                        singleLine = true,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary
+                        )
+                    )
+
+                    // Shift micro-adjuster row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Shift:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        val sdfParser = remember { java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()) }
+
+                        val adjustTime = { minutesToShift: Int ->
+                            try {
+                                val currentParsed = sdfParser.parse(ledgerTimestamp) ?: java.util.Date()
+                                val cal = java.util.Calendar.getInstance()
+                                cal.time = currentParsed
+                                cal.add(java.util.Calendar.MINUTE, minutesToShift)
+                                viewModel.ledgerTimestampText.value = sdfParser.format(cal.time)
+                            } catch (e: Exception) {
+                                val cal = java.util.Calendar.getInstance()
+                                cal.add(java.util.Calendar.MINUTE, minutesToShift)
+                                viewModel.ledgerTimestampText.value = sdfParser.format(cal.time)
+                            }
+                        }
+
+                        listOf(
+                            "-1 Hr" to { adjustTime(-60) },
+                            "-10 Min" to { adjustTime(-10) },
+                            "+10 Min" to { adjustTime(10) },
+                            "Now" to { viewModel.ledgerTimestampText.value = sdfParser.format(java.util.Date()) }
+                        ).forEach { (label, onClick) ->
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                    .clickable { onClick() }
+                                    .padding(vertical = 4.dp, horizontal = 8.dp)
+                            ) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+
                     Spacer(modifier = Modifier.height(6.dp))
 
                     // Live auto calculations displaying results as the user types
@@ -1305,9 +2754,9 @@ fun AddLedgerDialog(
                 }
 
                 // Error validation prompt if relevant
-                if (!isFormValid && (prevPoints.isNotEmpty() || availPoints.isNotEmpty() || prevBalance.isNotEmpty() || walletBalance.isNotEmpty())) {
+                if (!isFormValid && (prevPoints.isNotEmpty() || availPoints.isNotEmpty() || prevBalance.isNotEmpty() || walletBalance.isNotEmpty() || declaredDeficit.isNotEmpty())) {
                     Text(
-                        text = "⚠️ Please enter valid integers in all 4 numbered fields.",
+                        text = "⚠️ Please enter valid integers in all numbered/calculator/breakdown fields.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.fillMaxWidth()
@@ -1343,7 +2792,10 @@ fun AddLedgerDialog(
                     ) {
                         Icon(imageVector = Icons.Default.Check, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save Record", fontWeight = FontWeight.Black)
+                        Text(
+                            text = if (editingEntryId != null) "Update Record" else "Save Record",
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
             }
@@ -1418,6 +2870,15 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
                     valueColor = defColor,
                     isBold = true
                 )
+
+                if (calc.loss != 0) {
+                    MathDataRow(
+                        label = "Step 5: Unexplained Remaining Loss",
+                        value = usdFormatter.format(calc.loss),
+                        valueColor = MaterialTheme.colorScheme.error,
+                        isBold = true
+                    )
+                }
             }
         }
     }
@@ -1439,14 +2900,17 @@ fun MathDataRow(
             text = label,
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            modifier = Modifier.weight(1f)
         )
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.bodySmall,
             fontWeight = if (isBold) FontWeight.Black else FontWeight.Bold,
             color = valueColor,
-            fontSize = 11.sp
+            fontSize = 11.sp,
+            maxLines = 1
         )
     }
 }
@@ -1609,6 +3073,7 @@ fun TransactionMetricsPanel(transactions: List<FinancialTransaction>) {
 @Composable
 fun TransactionCard(
     transaction: FinancialTransaction,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
@@ -1625,16 +3090,16 @@ fun TransactionCard(
         else -> Icons.Default.Info to Color(0xFF4C524E)
     }
     
-    Card(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 4.dp)
             .testTag("tx_card_${transaction.id}"),
-        colors = CardDefaults.cardColors(
+        colors = CardDefaults.elevatedCardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-        shape = RoundedCornerShape(12.dp)
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier
@@ -1705,6 +3170,21 @@ fun TransactionCard(
                     color = displayColor
                 )
                 
+                // Direct Edit Icon Button
+                IconButton(
+                    onClick = onEdit,
+                    modifier = Modifier
+                        .size(24.dp)
+                        .testTag("edit_tx_${transaction.id}")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit Transaction",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+
                 Box {
                     IconButton(
                         onClick = { isMenuExpanded = true },
@@ -1720,6 +3200,20 @@ fun TransactionCard(
                         expanded = isMenuExpanded,
                         onDismissRequest = { isMenuExpanded = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Edit Transaction") },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = {
+                                isMenuExpanded = false
+                                onEdit()
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("Delete Transaction", color = MaterialTheme.colorScheme.error) },
                             leadingIcon = {
@@ -1752,8 +3246,29 @@ fun AddTransactionDialog(
     val txAmt by viewModel.txAmountText.collectAsStateWithLifecycle()
     val txCat by viewModel.txCategoryText.collectAsStateWithLifecycle()
     val isFormValid by viewModel.isTxFormValid.collectAsStateWithLifecycle()
+    val editingTxId by viewModel.editingTxId.collectAsStateWithLifecycle()
     
     val context = LocalContext.current
+    
+    val isAmtValid = remember(txAmt) {
+        if (txAmt.isBlank()) true
+        else {
+            val parsed = txAmt.toDoubleOrNull()
+            parsed != null && parsed > 0.0
+        }
+    }
+    
+    val isDateValid = remember(txDate) {
+        if (txDate.isBlank()) true
+        else {
+            try {
+                val parsed = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(txDate)
+                parsed != null && parsed.time <= System.currentTimeMillis()
+            } catch (e: Exception) {
+                false
+            }
+        }
+    }
     
     val categories = listOf(
         "Income",
@@ -1795,19 +3310,42 @@ fun AddTransactionDialog(
                 ) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Star,
+                            imageVector = if (editingTxId != null) Icons.Default.Edit else Icons.Default.Star,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.size(24.dp)
                         )
-                        Text(
-                            text = "Add Transaction",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Column {
+                            Text(
+                                text = if (editingTxId != null) "Edit Transaction" else "Add Transaction",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val syncStatus by viewModel.draftSyncStatus.collectAsStateWithLifecycle()
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(RoundedCornerShape(100.dp))
+                                        .background(
+                                            if (syncStatus == "Draft Synced") Color(0xFF4CAF50) else Color(0xFFFF9800)
+                                        )
+                                )
+                                Text(
+                                    text = syncStatus,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
                     }
                     IconButton(onClick = onDismiss) {
                         Icon(imageVector = Icons.Default.Close, contentDescription = "Close dialog")
@@ -1835,6 +3373,10 @@ fun AddTransactionDialog(
                         label = { Text("Date (YYYY-MM-DD)") },
                         placeholder = { Text("Select Date") },
                         readOnly = true,
+                        isError = !isDateValid,
+                        supportingText = if (!isDateValid) {
+                            { Text("Date cannot be in the future", color = MaterialTheme.colorScheme.error) }
+                        } else null,
                         trailingIcon = {
                             IconButton(onClick = {
                                 val calendar = Calendar.getInstance()
@@ -1922,6 +3464,10 @@ fun AddTransactionDialog(
                         label = { Text("Amount ($)") },
                         placeholder = { Text("e.g. 45.50") },
                         singleLine = true,
+                        isError = !isAmtValid,
+                        supportingText = if (!isAmtValid) {
+                            { Text("Amount must be a positive number", color = MaterialTheme.colorScheme.error) }
+                        } else null,
                         keyboardOptions = KeyboardOptions(
                             keyboardType = KeyboardType.Decimal,
                             imeAction = ImeAction.Done
@@ -2018,7 +3564,10 @@ fun AddTransactionDialog(
                     ) {
                         Icon(imageVector = Icons.Default.Check, contentDescription = null)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save Transaction", fontWeight = FontWeight.Black)
+                        Text(
+                            text = if (editingTxId != null) "Update Transaction" else "Save Transaction",
+                            fontWeight = FontWeight.Black
+                        )
                     }
                 }
             }
@@ -2662,16 +4211,17 @@ fun WalletAccountCard(
     val brandColor = if (isBkash) Color(0xFFE2125B) else Color(0xFFF15A22)
     val brandContainer = if (isBkash) Color(0xFFFDF0F4) else Color(0xFFFFF2EE)
 
-    OutlinedCard(
+    ElevatedCard(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp, vertical = 6.dp)
             .clickable { onEditClick() }
             .testTag("wallet_account_card_${account.id}"),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+        colors = CardDefaults.elevatedCardColors(
+            containerColor = brandContainer
         ),
-        border = BorderStroke(1.5.dp, brandColor.copy(alpha = 0.3f))
+        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+        shape = RoundedCornerShape(16.dp)
     ) {
         Row(
             modifier = Modifier
@@ -2882,3 +4432,492 @@ fun WalletBalanceEditDialog(
         }
     }
 }
+
+@Composable
+fun LedgerDetailDialog(
+    entry: LedgerEntry,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val fullDateStr = remember(entry.timestamp) {
+        val sdf = SimpleDateFormat("EEEE, MMMM dd, yyyy • hh:mm:ss a", Locale.getDefault())
+        sdf.format(Date(entry.timestamp))
+    }
+
+    var showDeleteConfirm by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .padding(16.dp)
+                .testTag("ledger_detail_dialog_${entry.id}"),
+            shape = RoundedCornerShape(24.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp)
+            ) {
+                // Header with icon and title
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
+                        Column {
+                            Text(
+                                text = "Entry Details",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "ID: ${entry.id}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.testTag("ledger_detail_close_icon")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Close detailed view",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Scrollable Content
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(20.dp)
+                ) {
+                    // Date & Type Badge
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "TIMESTAMP",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.Black
+                            )
+                            Text(
+                                text = fullDateStr,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        TransactionBadge(type = entry.transactionType)
+                    }
+
+                    // Section 1: Points calculation details
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "POINTS METRIC BREAKDOWN",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        DetailMetricRow("Previous Points", entry.previousPoints.toString())
+                        DetailMetricRow("Available Points", entry.availablePoints.toString())
+
+                        val netPointsChange = entry.previousPoints - entry.availablePoints
+                        val netColor = if (netPointsChange >= 0) Color(0xFF007A3E) else Color(0xFFD63031)
+                        val netSign = if (netPointsChange >= 0) "+" else ""
+                        DetailMetricRow(
+                            label = "Net Points Deducted/Added",
+                            value = "$netSign$netPointsChange pts",
+                            valueColor = netColor,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        Text(
+                            text = "Formula: Prev Points (${entry.previousPoints}) - Avail Points (${entry.availablePoints}) = Net Change ($netPointsChange)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    // Section 2: Wallet Balance Reconciliation
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.ShoppingCart,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.secondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "WALLET CASH RECONCILIATION",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        DetailMetricRow("Previous Cash Balance", usdFormatter.format(entry.previousBalance))
+                        DetailMetricRow("Specified/Product Cost", usdFormatter.format(entry.transactionAmount))
+                        DetailMetricRow("Expected Cash Balance", usdFormatter.format(entry.expectedBalance), fontWeight = FontWeight.SemiBold)
+                        DetailMetricRow("Actual Wallet Balance", usdFormatter.format(entry.walletBalance), valueColor = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = if (entry.transactionType == "Sale") {
+                                "Calculation Flow (Sale): Previous Cash (${usdFormatter.format(entry.previousBalance)}) + Value from points (${usdFormatter.format(entry.transactionAmount)}) = Expected Balance (${usdFormatter.format(entry.expectedBalance)})"
+                            } else {
+                                "Calculation Flow (Product in Hand): Previous Cash (${usdFormatter.format(entry.previousBalance)}) - Product Cost (${usdFormatter.format(entry.transactionAmount)}) = Expected Balance (${usdFormatter.format(entry.expectedBalance)})"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    // Section 3: Variance (Deficit / Savings) Analysis
+                    val hasDeficit = entry.deficit > 0
+                    val hasSavings = entry.deficit < 0
+                    val varianceContainerColor = when {
+                        hasDeficit -> Color(0xFFFFEAEE)
+                        hasSavings -> Color(0xFFE6F7ED)
+                        else -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                    }
+                    val varianceBorderColor = when {
+                        hasDeficit -> Color(0xFFFAB6C0)
+                        hasSavings -> Color(0xFFA3E4C1)
+                        else -> MaterialTheme.colorScheme.outlineVariant
+                    }
+                    val varianceTextColor = when {
+                        hasDeficit -> Color(0xFFC01F37)
+                        hasSavings -> Color(0xFF1E7E34)
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(varianceContainerColor)
+                            .border(BorderStroke(1.dp, varianceBorderColor), RoundedCornerShape(16.dp))
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (hasDeficit) Icons.Default.Warning else Icons.Default.Check,
+                                contentDescription = null,
+                                tint = varianceTextColor,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = "VARIANCE & DEFICIT ANALYSIS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = varianceTextColor,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        DetailMetricRow(
+                            label = if (hasDeficit) "Deficit Spending Variance" else if (hasSavings) "Cash Savings Surplus" else "Variance/Difference",
+                            value = usdFormatter.format(abs(entry.deficit)),
+                            valueColor = varianceTextColor,
+                            fontWeight = FontWeight.Bold
+                        )
+
+                        DetailMetricRow("Declared Deficit Limit", usdFormatter.format(entry.declaredDeficit))
+                        DetailMetricRow("Capitalized Net Loss", usdFormatter.format(entry.loss), valueColor = if (entry.loss > 0) Color(0xFFC01F37) else MaterialTheme.colorScheme.onSurface)
+
+                        Text(
+                            text = "Variance Formula: Expected Cash (${usdFormatter.format(entry.expectedBalance)}) - Actual Wallet cash (${usdFormatter.format(entry.walletBalance)}) = Deficit (${usdFormatter.format(entry.deficit)})",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = varianceTextColor.copy(alpha = 0.8f)
+                        )
+                    }
+
+                    // Section 4: Operational Deficit Notes
+                    if (entry.deficitSpendingNotes.isNotBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f))
+                                .border(BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)), RoundedCornerShape(16.dp))
+                                .padding(16.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(
+                                text = "OPERATIONAL & DEFICIT NOTES",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = entry.deficitSpendingNotes,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+                Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Actions Footer Row: Edit, Delete, Close
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = { showDeleteConfirm = true },
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("ledger_detail_delete_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Delete")
+                    }
+
+                    OutlinedButton(
+                        onClick = onEdit,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("ledger_detail_edit_button")
+                    ) {
+                        Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Edit")
+                    }
+
+                    Button(
+                        onClick = onDismiss,
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("ledger_detail_close_button")
+                    ) {
+                        Text("Close")
+                    }
+                }
+            }
+        }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete This Record?", fontWeight = FontWeight.Bold) },
+            text = { Text("This will permanently remove this points ledger log entry from your local history.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDeleteConfirm = false
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("ledger_detail_delete_confirm")
+                ) {
+                    Text("Delete Record")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            },
+            modifier = Modifier.testTag("ledger_detail_delete_dialog")
+        )
+    }
+}
+
+@Composable
+fun DetailMetricRow(
+    label: String,
+    value: String,
+    valueColor: Color = MaterialTheme.colorScheme.onSurface,
+    fontWeight: FontWeight = FontWeight.Normal
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodyMedium,
+            color = valueColor,
+            fontWeight = fontWeight
+        )
+    }
+}
+
+fun generateLedgerCsv(entries: List<LedgerEntry>): String {
+    val header = "ID,Timestamp,Formatted Date,Previous Points,Available Points,Transaction Type,Transaction Cost,Previous Balance,Expected Balance,Actual Wallet Balance,Deficit / Savings,Deficit Notes,Declared Deficit Limit,Capitalized Loss\n"
+    val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+    val sb = java.lang.StringBuilder()
+    sb.append(header)
+    for (entry in entries) {
+        val dateStr = sdf.format(Date(entry.timestamp))
+        sb.append(entry.id).append(",")
+        sb.append(entry.timestamp).append(",")
+        sb.append(escapeCsvField(dateStr)).append(",")
+        sb.append(entry.previousPoints).append(",")
+        sb.append(entry.availablePoints).append(",")
+        sb.append(escapeCsvField(entry.transactionType)).append(",")
+        sb.append(entry.transactionAmount).append(",")
+        sb.append(entry.previousBalance).append(",")
+        sb.append(entry.expectedBalance).append(",")
+        sb.append(entry.walletBalance).append(",")
+        sb.append(entry.deficit).append(",")
+        sb.append(escapeCsvField(entry.deficitSpendingNotes)).append(",")
+        sb.append(entry.declaredDeficit).append(",")
+        sb.append(entry.loss).append("\n")
+    }
+    return sb.toString()
+}
+
+fun generateTransactionsCsv(transactions: List<FinancialTransaction>): String {
+    val header = "ID,Date,Description,Amount,Category\n"
+    val sb = java.lang.StringBuilder()
+    sb.append(header)
+    for (tx in transactions) {
+        sb.append(tx.id).append(",")
+        sb.append(escapeCsvField(tx.date)).append(",")
+        sb.append(escapeCsvField(tx.description)).append(",")
+        sb.append(tx.amount).append(",")
+        sb.append(escapeCsvField(tx.category)).append("\n")
+    }
+    return sb.toString()
+}
+
+fun escapeCsvField(value: String): String {
+    if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
+        return "\"" + value.replace("\"", "\"\"") + "\""
+    }
+    return value
+}
+
+fun generateLedgerJson(entries: List<LedgerEntry>): String {
+    val jsonArray = org.json.JSONArray()
+    for (entry in entries) {
+        val obj = org.json.JSONObject()
+        obj.put("id", entry.id)
+        obj.put("timestamp", entry.timestamp)
+        obj.put("previousPoints", entry.previousPoints)
+        obj.put("availablePoints", entry.availablePoints)
+        obj.put("transactionType", entry.transactionType)
+        obj.put("transactionAmount", entry.transactionAmount)
+        obj.put("previousBalance", entry.previousBalance)
+        obj.put("expectedBalance", entry.expectedBalance)
+        obj.put("walletBalance", entry.walletBalance)
+        obj.put("deficit", entry.deficit)
+        obj.put("deficitSpendingNotes", entry.deficitSpendingNotes)
+        obj.put("declaredDeficit", entry.declaredDeficit)
+        obj.put("loss", entry.loss)
+        jsonArray.put(obj)
+    }
+    return jsonArray.toString(4)
+}
+
+fun generateTransactionsJson(transactions: List<FinancialTransaction>): String {
+    val jsonArray = org.json.JSONArray()
+    for (tx in transactions) {
+        val obj = org.json.JSONObject()
+        obj.put("id", tx.id)
+        obj.put("date", tx.date)
+        obj.put("description", tx.description)
+        obj.put("amount", tx.amount)
+        obj.put("category", tx.category)
+        jsonArray.put(obj)
+    }
+    return jsonArray.toString(4)
+}
+

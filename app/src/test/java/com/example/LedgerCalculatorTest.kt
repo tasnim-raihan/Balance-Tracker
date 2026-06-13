@@ -105,4 +105,49 @@ class LedgerCalculatorTest {
         assertEquals(230, result.expectedBalance)
         assertEquals(-20, result.deficit)
     }
+
+    @Test
+    fun testCalculate_WithDeclaredDeficitMatching() {
+        val result = LedgerCalculator.calculate(
+            previousPoints = 100,
+            availablePoints = 75,
+            previousBalance = 1000,
+            walletBalance = 900,
+            declaredDeficit = 125
+        )
+        // Expected Balance = 1000 + (100 - 75) = 1025
+        // Deficit = Expected Balance (1025) - Wallet Balance (900) = 125
+        // Since Deficit (125) matches declaredDeficit (125), Loss = 0
+        assertEquals(125, result.deficit)
+        assertEquals(125, result.declaredDeficit)
+        assertEquals(0, result.loss)
+    }
+
+    @Test
+    fun testCalculate_WithDeclaredDeficitMismatch() {
+        val result = LedgerCalculator.calculate(
+            previousPoints = 100,
+            availablePoints = 75,
+            previousBalance = 1000,
+            walletBalance = 900,
+            declaredDeficit = 50
+        )
+        // Expected Balance = 1025
+        // Deficit = 1025 - 900 = 125
+        // Since Deficit (125) does not match declaredDeficit (50), Loss = 125 - 50 = 75
+        assertEquals(125, result.deficit)
+        assertEquals(50, result.declaredDeficit)
+        assertEquals(75, result.loss)
+    }
+
+    @Test
+    fun testTimestampParsingAndFormatting() {
+        val dateStr = "2026-06-13 11:35"
+        val sdf = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault())
+        val parsedDate = sdf.parse(dateStr)
+        
+        org.junit.Assert.assertNotNull(parsedDate)
+        val formattedBack = sdf.format(parsedDate!!)
+        assertEquals(dateStr, formattedBack)
+    }
 }

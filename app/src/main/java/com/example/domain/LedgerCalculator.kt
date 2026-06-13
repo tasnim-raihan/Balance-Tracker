@@ -12,7 +12,9 @@ object LedgerCalculator {
         val transactionType: String,
         val transactionAmount: Int,
         val expectedBalance: Int,
-        val deficit: Int
+        val deficit: Int,
+        val declaredDeficit: Int,
+        val loss: Int
     )
 
     /**
@@ -23,12 +25,14 @@ object LedgerCalculator {
      *     - If Net Change < 0: Set transactionType to "Product in Hand" and transactionAmount to absolute value.
      * - Step 3 (Expected Balance): Add Net Change to Previous Balance.
      * - Step 4 (Deficit Calculation): Subtract Wallet Balance from Expected Balance.
+     * - Deficit/Loss matching: Compute difference between expected deficit and user-declared deficit as loss.
      */
     fun calculate(
         previousPoints: Int,
         availablePoints: Int,
         previousBalance: Int,
-        walletBalance: Int
+        walletBalance: Int,
+        declaredDeficit: Int = 0
     ): CalculationResult {
         // Step 1: Net Change
         val netChange = previousPoints - availablePoints
@@ -43,12 +47,21 @@ object LedgerCalculator {
         // Step 4: Deficit Calculation
         val deficit = expectedBalance - walletBalance
 
+        // Loss is the remaining unexplained deficit if total deficit doesn't match declared Deficit
+        val loss = if (deficit != declaredDeficit) {
+            deficit - declaredDeficit
+        } else {
+            0
+        }
+
         return CalculationResult(
             netChange = netChange,
             transactionType = transactionType,
             transactionAmount = transactionAmount,
             expectedBalance = expectedBalance,
-            deficit = deficit
+            deficit = deficit,
+            declaredDeficit = declaredDeficit,
+            loss = loss
         )
     }
 }
