@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.LedgerEntry
+import com.example.data.FinancialTransaction
 import com.example.data.LedgerRepository
 import com.example.domain.LedgerCalculator
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +15,76 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class LedgerViewModel(private val repository: LedgerRepository) : ViewModel() {
+
+    // Financial Transaction Form inputs
+    val txDateText = MutableStateFlow("")
+    val txDescriptionText = MutableStateFlow("")
+    val txAmountText = MutableStateFlow("")
+    val txCategoryText = MutableStateFlow("Expense") // default category
+
+    init {
+        resetTxForm()
+    }
+
+    // Retrieve active financial transactions
+    val transactions: StateFlow<List<FinancialTransaction>> = repository.allTransactions
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    val isTxFormValid: StateFlow<Boolean> = combine(
+        txDateText,
+        txDescriptionText,
+        txAmountText,
+        txCategoryText
+    ) { date, desc, amt, cat ->
+        date.isNotBlank() && desc.isNotBlank() && amt.isNotBlank() && amt.toDoubleOrNull() != null && cat.isNotBlank()
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    fun saveTransaction() {
+        val date = txDateText.value
+        val desc = txDescriptionText.value
+        val amt = txAmountText.value.toDoubleOrNull() ?: 0.0
+        val cat = txCategoryText.value
+
+        val transaction = FinancialTransaction(
+            date = date,
+            description = desc,
+            amount = amt,
+            category = cat
+        )
+
+        viewModelScope.launch {
+            repository.insertTransaction(transaction)
+            resetTxForm()
+        }
+    }
+
+    fun deleteTransaction(id: Int) {
+        viewModelScope.launch {
+            repository.deleteTransactionById(id)
+        }
+    }
+
+    fun deleteAllTransactions() {
+        viewModelScope.launch {
+            repository.deleteAllTransactions()
+        }
+    }
+
+    fun resetTxForm() {
+        val today = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date())
+        txDateText.value = today
+        txDescriptionText.value = ""
+        txAmountText.value = ""
+        txCategoryText.value = "Expense"
+    }
 
     // Form live inputs
     val previousPointsText = MutableStateFlow("")

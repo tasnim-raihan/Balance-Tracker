@@ -20,4 +20,17 @@ interface LedgerDao {
 
     @Query("DELETE FROM ledger_entries")
     suspend fun deleteAll()
+
+    // Financial Transactions (Added for manual transaction inputs)
+    @Query("SELECT * FROM financial_transactions ORDER BY id DESC")
+    fun getAllTransactions(): Flow<List<FinancialTransaction>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertTransaction(transaction: FinancialTransaction): Long
+
+    @Query("DELETE FROM financial_transactions WHERE id = :id")
+    suspend fun deleteTransactionById(id: Int)
+
+    @Query("DELETE FROM financial_transactions")
+    suspend fun deleteAllTransactions()
 }

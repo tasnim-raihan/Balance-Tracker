@@ -17,4 +17,19 @@ class LedgerRepository(private val ledgerDao: LedgerDao) {
     suspend fun deleteAll() {
         ledgerDao.deleteAll()
     }
+
+    // Financial Transactions (Form Manual Entries)
+    val allTransactions: Flow<List<FinancialTransaction>> = ledgerDao.getAllTransactions()
+
+    suspend fun insertTransaction(transaction: FinancialTransaction) {
+        ledgerDao.insertTransaction(transaction)
+    }
+
+    suspend fun deleteTransactionById(id: Int) {
+        ledgerDao.deleteTransactionById(id)
+    }
+
+    suspend fun deleteAllTransactions() {
+        ledgerDao.deleteAllTransactions()
+    }
 }
