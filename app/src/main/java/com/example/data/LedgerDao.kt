@@ -33,4 +33,17 @@ interface LedgerDao {
 
     @Query("DELETE FROM financial_transactions")
     suspend fun deleteAllTransactions()
+
+    // Wallet Accounts
+    @Query("SELECT * FROM wallet_accounts ORDER BY type ASC, id ASC")
+    fun getAllWalletAccounts(): Flow<List<WalletAccount>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWalletAccount(account: WalletAccount)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertWalletAccounts(accounts: List<WalletAccount>)
+
+    @Query("UPDATE wallet_accounts SET balance = :balance WHERE id = :id")
+    suspend fun updateWalletAccountBalance(id: String, balance: Double)
 }

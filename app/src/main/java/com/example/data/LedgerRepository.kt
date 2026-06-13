@@ -32,4 +32,15 @@ class LedgerRepository(private val ledgerDao: LedgerDao) {
     suspend fun deleteAllTransactions() {
         ledgerDao.deleteAllTransactions()
     }
+
+    // Wallet Accounts
+    val allWalletAccounts: Flow<List<WalletAccount>> = ledgerDao.getAllWalletAccounts()
+
+    suspend fun insertWalletAccounts(accounts: List<WalletAccount>) {
+        ledgerDao.insertWalletAccounts(accounts)
+    }
+
+    suspend fun updateWalletAccountBalance(id: String, balance: Double) {
+        ledgerDao.updateWalletAccountBalance(id, balance)
+    }
 }

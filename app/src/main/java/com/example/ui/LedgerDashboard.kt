@@ -37,6 +37,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.LedgerEntry
 import com.example.data.FinancialTransaction
+import com.example.data.WalletAccount
 import com.example.domain.LedgerCalculator
 import com.example.viewmodel.LedgerViewModel
 import java.text.NumberFormat
@@ -117,25 +118,27 @@ fun LedgerDashboard(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = {
-                    if (selectedTab == 0) {
-                        viewModel.resetForm()
-                        isAddDialogOpen = true
-                    } else {
-                        viewModel.resetTxForm()
-                        isAddTxDialogOpen = true
-                    }
-                },
-                containerColor = MaterialTheme.colorScheme.primary,
-                contentColor = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.testTag(if (selectedTab == 0) "add_ledger_fab" else "add_tx_fab")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = if (selectedTab == 0) "Add New Points Entry" else "Add New Financial Transaction",
-                    modifier = Modifier.size(28.dp)
-                )
+            if (selectedTab < 2) {
+                FloatingActionButton(
+                    onClick = {
+                        if (selectedTab == 0) {
+                            viewModel.resetForm()
+                            isAddDialogOpen = true
+                        } else {
+                            viewModel.resetTxForm()
+                            isAddTxDialogOpen = true
+                        }
+                    },
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.testTag(if (selectedTab == 0) "add_ledger_fab" else "add_tx_fab")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = if (selectedTab == 0) "Add New Points Entry" else "Add New Financial Transaction",
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -155,7 +158,7 @@ fun LedgerDashboard(
                     .padding(4.dp),
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                listOf("Points Ledger", "Manual Transactions").forEachIndexed { index, title ->
+                listOf("Points Ledger", "Manual Transactions", "Wallet Accounts").forEachIndexed { index, title ->
                     val isSelected = selectedTab == index
                     val containerColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
                     val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
@@ -175,16 +178,22 @@ fun LedgerDashboard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = if (index == 0) Icons.Default.ShoppingCart else Icons.Default.Star,
+                                imageVector = when (index) {
+                                    0 -> Icons.Default.ShoppingCart
+                                    1 -> Icons.Default.Star
+                                    else -> Icons.Default.List
+                                },
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = contentColor
                             )
                             Text(
                                 text = title,
-                                style = MaterialTheme.typography.labelLarge,
+                                style = MaterialTheme.typography.labelSmall,
                                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = contentColor
+                                color = contentColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -228,7 +237,7 @@ fun LedgerDashboard(
                         }
                     }
                 }
-            } else {
+            } else if (selectedTab == 1) {
                 // Manual Transactions View
                 val filteredTransactions = filterTransactions(
                     transactions = transactions,
@@ -406,6 +415,15 @@ fun LedgerDashboard(
                         }
                     }
                 }
+            } else {
+                // Wallet Accounts View
+                val walletAccounts by viewModel.walletAccounts.collectAsStateWithLifecycle()
+                val totalWalletBalance by viewModel.totalWalletBalance.collectAsStateWithLifecycle()
+                WalletAccountsView(
+                    walletAccounts = walletAccounts,
+                    totalWalletBalance = totalWalletBalance,
+                    onUpdateBalance = { id, balance -> viewModel.updateWalletAccountBalance(id, balance) }
+                )
             }
         }
     }
@@ -2410,6 +2428,402 @@ fun TransactionFilterBar(
                         .padding(horizontal = 4.dp, vertical = 2.dp)
                         .testTag("filter_reset_button")
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun WalletAccountsView(
+    walletAccounts: List<WalletAccount>,
+    totalWalletBalance: Double,
+    onUpdateBalance: (String, Double) -> Unit
+) {
+    val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    var selectedFilter by remember { mutableStateOf("All") } // "All", "Bkash", "Nagad"
+    var editingAccount by remember { mutableStateOf<WalletAccount?>(null) }
+
+    val filteredAccounts = remember(walletAccounts, selectedFilter) {
+        when (selectedFilter) {
+            "Bkash" -> walletAccounts.filter { it.type.contains("Bkash", ignoreCase = true) }
+            "Nagad" -> walletAccounts.filter { it.type.contains("Nagad", ignoreCase = true) }
+            else -> walletAccounts
+        }
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag("wallet_accounts_list"),
+        contentPadding = PaddingValues(bottom = 96.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Total Wallet Balance Card
+        item {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .testTag("wallet_total_card"),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "Total Wallet Balance",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                            Text(
+                                text = usdFormatter.format(totalWalletBalance),
+                                style = MaterialTheme.typography.headlineLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.List,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+                    Text(
+                        text = "Sum of all active bKash & Nagad accounts below.",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                    )
+                }
+            }
+        }
+
+        // Filter Chips row
+        item {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                listOf("All", "Bkash", "Nagad").forEach { network ->
+                    val isSelected = selectedFilter == network
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { selectedFilter = network },
+                        label = { Text(text = network) },
+                        modifier = Modifier.testTag("filter_chip_$network"),
+                        leadingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        } else null
+                    )
+                }
+            }
+        }
+
+        // Accounts List Title
+        item {
+            Text(
+                text = "$selectedFilter Accounts (${filteredAccounts.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(horizontal = 16.dp),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        if (filteredAccounts.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(32.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("No accounts found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        } else {
+            items(
+                items = filteredAccounts,
+                key = { it.id }
+            ) { account ->
+                WalletAccountCard(
+                    account = account,
+                    usdFormatter = usdFormatter,
+                    onEditClick = { editingAccount = account }
+                )
+            }
+        }
+    }
+
+    // Editing Dialog
+    editingAccount?.let { account ->
+        WalletBalanceEditDialog(
+            account = account,
+            onDismiss = { editingAccount = null },
+            onSave = { newBal ->
+                onUpdateBalance(account.id, newBal)
+                editingAccount = null
+            }
+        )
+    }
+}
+
+@Composable
+fun WalletAccountCard(
+    account: WalletAccount,
+    usdFormatter: NumberFormat,
+    onEditClick: () -> Unit
+) {
+    val isBkash = account.type.contains("Bkash", ignoreCase = true)
+    val brandColor = if (isBkash) Color(0xFFE2125B) else Color(0xFFF15A22)
+    val brandContainer = if (isBkash) Color(0xFFFDF0F4) else Color(0xFFFFF2EE)
+
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clickable { onEditClick() }
+            .testTag("wallet_account_card_${account.id}"),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        border = BorderStroke(1.5.dp, brandColor.copy(alpha = 0.3f))
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(brandContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isBkash) "bK" else "Ng",
+                        fontWeight = FontWeight.ExtraBold,
+                        color = brandColor,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+
+                Column {
+                    Text(
+                        text = account.type,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = account.number,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        fontFamily = FontFamily.Monospace
+                    )
+                }
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.End
+                ) {
+                    Text(
+                        text = "Balance",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = usdFormatter.format(account.balance),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = brandColor
+                    )
+                }
+
+                IconButton(
+                    onClick = onEditClick,
+                    modifier = Modifier
+                        .testTag("wallet_account_edit_${account.id}")
+                        .size(40.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = "Edit balance of ${account.number}",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun WalletBalanceEditDialog(
+    account: WalletAccount,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var amountInput by remember { mutableStateOf(if (account.balance > 0.0) account.balance.toString() else "") }
+    var isError by remember { mutableStateOf(false) }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = true)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .testTag("wallet_edit_dialog"),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Update Account Amount",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp))
+                        .padding(12.dp)
+                ) {
+                    Text(
+                        text = account.type,
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = account.number,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                OutlinedTextField(
+                    value = amountInput,
+                    onValueChange = { input ->
+                        if (input.isEmpty() || input.toDoubleOrNull() != null) {
+                            amountInput = input
+                            isError = false
+                        } else {
+                            isError = true
+                        }
+                    },
+                    label = { Text("Input Wallet Amount") },
+                    placeholder = { Text("e.g. 1500") },
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    singleLine = true,
+                    isError = isError,
+                    supportingText = if (isError) {
+                        { Text("Please enter a valid amount", color = MaterialTheme.colorScheme.error) }
+                    } else null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wallet_edit_amount_input"),
+                    trailingIcon = {
+                        Text(
+                            text = "$",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                    }
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.testTag("wallet_edit_cancel")
+                    ) {
+                        Text("Cancel")
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            val parsed = amountInput.toDoubleOrNull() ?: 0.0
+                            if (parsed >= 0.0) {
+                                onSave(parsed)
+                            } else {
+                                isError = true
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.testTag("wallet_edit_save")
+                    ) {
+                        Text("Save Amount")
+                    }
+                }
             }
         }
     }
