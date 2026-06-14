@@ -1547,7 +1547,7 @@ fun DailySummaryWidget(entries: List<LedgerEntry>) {
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
                     Text(
                         text = "Income",
                         style = MaterialTheme.typography.bodySmall,
@@ -1557,11 +1557,13 @@ fun DailySummaryWidget(entries: List<LedgerEntry>) {
                         text = usdFormatter.format(dailyIncome),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFF028A3C) // Green flavor
+                        color = Color(0xFF028A3C), // Green flavor
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 
-                Column(modifier = Modifier.weight(1f)) {
+                Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
                     Text(
                         text = "Expenses",
                         style = MaterialTheme.typography.bodySmall,
@@ -1571,7 +1573,9 @@ fun DailySummaryWidget(entries: List<LedgerEntry>) {
                         text = usdFormatter.format(dailyExpenses),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = Color(0xFFC07000) // Orange/Warn flavor
+                        color = Color(0xFFC07000), // Orange/Warn flavor
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 
@@ -1585,7 +1589,9 @@ fun DailySummaryWidget(entries: List<LedgerEntry>) {
                         text = usdFormatter.format(dailyLoss),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.error
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
@@ -1664,7 +1670,7 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
                             Text(
                                 text = "Net Profit",
                                 style = MaterialTheme.typography.bodySmall,
@@ -1674,11 +1680,13 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                 text = usdFormatter.format(monthlyNetProfit),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
-                                color = if (monthlyNetProfit >= 0) Color(0xFF028A3C) else MaterialTheme.colorScheme.error
+                                color = if (monthlyNetProfit >= 0) Color(0xFF028A3C) else MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
                             Text(
                                 text = "Gross Income",
                                 style = MaterialTheme.typography.bodySmall,
@@ -1688,7 +1696,9 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                 text = usdFormatter.format(monthlyIncome),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                color = MaterialTheme.colorScheme.onTertiaryContainer,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                         
@@ -1702,7 +1712,9 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                 text = usdFormatter.format(monthlyLoss),
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error
+                                color = MaterialTheme.colorScheme.error,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }
@@ -1756,7 +1768,9 @@ fun LedgerCard(
                         text = formattedDate,
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
@@ -2837,19 +2851,19 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Net change
                 MathDataRow(
-                    label = "Step 1: Net Change (Prev - Avail Points)",
+                    label = "Net Change (Prev - Avail Points)",
                     value = if (calc.netChange >= 0) "+${calc.netChange}" else "${calc.netChange}"
                 )
 
                 // Transaction type
                 MathDataRow(
-                    label = "Step 2: Transaction Pattern Amount",
+                    label = "Transaction Pattern Amount",
                     value = "${calc.transactionAmount} (${calc.transactionType})"
                 )
 
                 // Expected Balance
                 MathDataRow(
-                    label = "Step 3: Expected Balance (Prev Bal + Net Change)",
+                    label = "Expected Balance (Prev Bal + Net Change)",
                     value = usdFormatter.format(calc.expectedBalance)
                 )
 
@@ -2862,7 +2876,7 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
                     MaterialTheme.colorScheme.onSurface
                 }
                 MathDataRow(
-                    label = "Step 4: Variance Deficit (Expected - Wallet)",
+                    label = "Variance Deficit (Expected - Wallet)",
                     value = usdFormatter.format(calc.deficit),
                     valueColor = defColor,
                     isBold = true
@@ -2870,7 +2884,7 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
 
                 if (calc.loss != 0) {
                     MathDataRow(
-                        label = "Step 5: Unexplained Remaining Loss",
+                        label = "Unexplained Remaining Loss",
                         value = usdFormatter.format(calc.loss),
                         valueColor = MaterialTheme.colorScheme.error,
                         isBold = true
@@ -2907,7 +2921,8 @@ fun MathDataRow(
             fontWeight = if (isBold) FontWeight.Black else FontWeight.Bold,
             color = valueColor,
             fontSize = 11.sp,
-            maxLines = 1
+            maxLines = 1,
+            textAlign = TextAlign.End
         )
     }
 }
@@ -3138,7 +3153,9 @@ fun TransactionCard(
                         text = transaction.category,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.ExtraBold,
-                        color = color
+                        color = color,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                     Text(
                         text = "•",
@@ -3148,7 +3165,9 @@ fun TransactionCard(
                     Text(
                         text = transaction.date,
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
             }
