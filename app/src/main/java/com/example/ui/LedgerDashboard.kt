@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
@@ -52,6 +53,7 @@ import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,213 +123,332 @@ fun LedgerDashboard(
     var isFabExpanded by remember { mutableStateOf(false) }
     var isLedgerFullscreen by remember { mutableStateOf(false) }
 
-    Scaffold(
-        modifier = modifier.fillMaxSize(),
-        topBar = {
-            AnimatedVisibility(visible = !isLedgerFullscreen) {
-                TopAppBar(
-                title = {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    BackHandler(enabled = true) {
+        if (drawerState.isOpen) {
+            scope.launch { drawerState.close() }
+        } else if (isLedgerFullscreen) {
+            isLedgerFullscreen = false
+        } else if (selectedTab != 0) {
+            selectedTab = 0
+        }
+    }
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = !isLedgerFullscreen,
+        drawerContent = {
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp),
+                modifier = Modifier.width(300.dp)
+            ) {
+                Spacer(modifier = Modifier.statusBarsPadding())
+                
+                // Header / App Branding
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(15.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(46.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.ShoppingCart,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(28.dp)
+                            modifier = Modifier.size(24.dp)
                         )
+                    }
+                    Column {
                         Text(
                             text = "Balance Tracker",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.SansSerif
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Active Account Ledger",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                },
-                actions = {
-                    IconButton(
-                        onClick = onThemeToggle,
-                        modifier = Modifier.testTag("theme_toggle_button")
-                    ) {
-                        Icon(
-                            imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
-                            contentDescription = if (isDarkTheme) "Switch to Light Mode" else "Switch to Dark Mode",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    if (selectedTab == 0 && entries.isNotEmpty()) {
-                        IconButton(
-                            onClick = { 
-                                exportTargetType = "Ledger"
-                                isExportDialogOpen = true 
-                            },
-                            modifier = Modifier.testTag("export_ledger_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Export Ledger CSV",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(
-                            onClick = { isDeleteAllConfirmOpen = true },
-                            modifier = Modifier.testTag("delete_all_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Clear All Records",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    } else if (selectedTab == 1 && transactions.isNotEmpty()) {
-                        IconButton(
-                            onClick = { 
-                                exportTargetType = "Transactions"
-                                isExportDialogOpen = true 
-                            },
-                            modifier = Modifier.testTag("export_transactions_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Share,
-                                contentDescription = "Export Transactions CSV",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                        IconButton(
-                            onClick = { isDeleteAllTxConfirmOpen = true },
-                            modifier = Modifier.testTag("delete_all_tx_button")
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Delete,
-                                contentDescription = "Clear All Transactions",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
+                }
+                
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
                 )
-            )
-            }
-        },
-        floatingActionButton = {
-            if (selectedTab < 2 && !isLedgerFullscreen) {
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Navigation items
+                val drawerItems = listOf(
+                    Triple("Point Ledger Summary", Icons.Default.Info, 0),
+                    Triple("Ledger History", Icons.Default.List, 1),
+                    Triple("Wallet Balance", Icons.Default.ShoppingCart, 2)
+                )
+                
+                drawerItems.forEach { (title, icon, index) ->
+                    val selected = selectedTab == index
+                    NavigationDrawerItem(
+                        label = { 
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+                            ) 
+                        },
+                        selected = selected,
+                        onClick = {
+                            selectedTab = index
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { 
+                            Icon(
+                                imageVector = icon, 
+                                contentDescription = null,
+                                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            ) 
+                        },
+                        modifier = Modifier
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .testTag("drawer_item_$index"),
+                        colors = NavigationDrawerItemDefaults.colors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f),
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Button(
+                    onClick = {
+                        viewModel.resetForm()
+                        isAddDialogOpen = true
+                        scope.launch { drawerState.close() }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .testTag("drawer_primary_action_btn"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    ),
+                    shape = RoundedCornerShape(12.dp)
                 ) {
-                    if (isFabExpanded && selectedTab == 0) {
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                isFabExpanded = false
-                                viewModel.resetTxForm()
-                                isAddTxDialogOpen = true
-                            },
-                            icon = { Icon(Icons.Default.Add, "Add Transaction") },
-                            text = { Text("Log Transaction") },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "Log Points Entry",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Log Points Entry",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                Text(
+                    text = "UTCOffsets Sync v1.4",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .align(Alignment.CenterHorizontally)
+                )
+            }
+        }
+    ) {
+        Scaffold(
+            modifier = modifier.fillMaxSize(),
+            topBar = {
+                AnimatedVisibility(visible = !isLedgerFullscreen) {
+                    TopAppBar(
+                        navigationIcon = {
+                            if (selectedTab != 0) {
+                                IconButton(
+                                    onClick = { selectedTab = 0 },
+                                    modifier = Modifier.testTag("back_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ArrowBack,
+                                        contentDescription = "Navigate Back to Summary",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            } else {
+                                IconButton(
+                                    onClick = {
+                                        scope.launch {
+                                            if (drawerState.isOpen) drawerState.close() else drawerState.open()
+                                        }
+                                    },
+                                    modifier = Modifier.testTag("drawer_menu_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Menu,
+                                        contentDescription = "Open Navigation Drawer",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        },
+                        title = {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = when (selectedTab) {
+                                        0 -> "Ledger Summary"
+                                        1 -> "Ledger History"
+                                        else -> "Wallet Balance"
+                                    },
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.SansSerif
+                                )
+                            }
+                        },
+                        actions = {
+                            IconButton(
+                                onClick = onThemeToggle,
+                                modifier = Modifier.testTag("theme_toggle_button")
+                            ) {
+                                Icon(
+                                    imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                                    contentDescription = if (isDarkTheme) "Switch to Light Mode" else "Switch to Dark Mode",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            if ((selectedTab == 0 || selectedTab == 1) && entries.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { 
+                                        exportTargetType = "Ledger"
+                                        isExportDialogOpen = true 
+                                    },
+                                    modifier = Modifier.testTag("export_ledger_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Export Ledger CSV",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = { isDeleteAllConfirmOpen = true },
+                                    modifier = Modifier.testTag("delete_all_button")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Clear All Records",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
                         )
-                        ExtendedFloatingActionButton(
-                            onClick = {
-                                isFabExpanded = false
-                                viewModel.resetForm()
-                                isAddDialogOpen = true
-                            },
-                            icon = { Icon(Icons.Default.Add, "Add Ledger Entry") },
-                            text = { Text("Log Points Entry") },
-                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
-                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
-                        )
-                    }
-
+                    )
+                }
+            },
+            floatingActionButton = {
+                if (!isLedgerFullscreen) {
                     FloatingActionButton(
                         onClick = {
-                            if (selectedTab == 0) {
-                                isFabExpanded = !isFabExpanded
-                            } else {
-                                viewModel.resetTxForm()
-                                isAddTxDialogOpen = true
-                            }
+                            viewModel.resetForm()
+                            isAddDialogOpen = true
                         },
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier.testTag(if (selectedTab == 0) "expand_fab" else "add_tx_fab")
+                        modifier = Modifier.testTag("add_ledger_fab")
                     ) {
                         Icon(
-                            imageVector = if (selectedTab == 0 && isFabExpanded) Icons.Default.Close else Icons.Default.Add,
-                            contentDescription = if (selectedTab == 0) "Expand Options" else "Add New Financial Transaction",
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Log Points Entry",
                             modifier = Modifier.size(28.dp)
                         )
                     }
                 }
             }
-        }
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // Improved Tab Selector using Material 3 TabRow
-            AnimatedVisibility(visible = !isLedgerFullscreen) {
-                PrimaryTabRow(
-                    selectedTabIndex = selectedTab,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    containerColor = Color.Transparent,
-                    divider = {}
-                ) {
-                    listOf("Points Ledger", "Manual Transactions", "Wallet Accounts").forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTab == index,
-                            onClick = { selectedTab = index },
-                            text = {
-                                Text(
-                                    text = title,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
-                                    textAlign = TextAlign.Center,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            },
-                            icon = {
-                                Icon(
-                                    imageVector = when (index) {
-                                        0 -> if (selectedTab == index) Icons.Default.ShoppingCart else Icons.Outlined.ShoppingCart
-                                        1 -> if (selectedTab == index) Icons.Default.Star else Icons.Outlined.Star
-                                        else -> if (selectedTab == index) Icons.Default.List else Icons.Outlined.List
-                                    },
-                                    contentDescription = null,
-                                    modifier = Modifier.size(22.dp)
-                                )
-                            },
-                            selectedContentColor = MaterialTheme.colorScheme.primary,
-                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.testTag("tab_selector_$index")
-                        )
-                    }
-                }
-            }
-
-            if (selectedTab == 0) {
-                // Points Ledger View
-                AnimatedVisibility(visible = !isLedgerFullscreen) {
-                    Column {
+        ) { innerPadding ->
+            Column(
+                modifier = Modifier
+                    .padding(innerPadding)
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+            ) {
+                if (selectedTab == 0) {
+                    // Points Ledger Summary screen (with newly requested scrolling feature!)
+                    Column(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
+                            .padding(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
                         MetricsSummaryPanel(entries)
                         DailySummaryWidget(entries)
                         MonthlySummaryWidget(entries)
-                    }
-                }
 
-                if (entries.isEmpty()) {
-                    EmptyStateView {
-                        viewModel.resetForm()
-                        isAddDialogOpen = true
+                        ElevatedCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            colors = CardDefaults.elevatedCardColors(
+                                containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)
+                            ),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary
+                                    )
+                                    Text(
+                                        text = "About Points Ledger",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.secondary
+                                    )
+                                }
+                                Text(
+                                    text = "Use the left sidebar menu to navigate to Ledger History for viewing individual transaction logs and searching entries, or check custom Wallet Accounts and actual cash reconciliations.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(80.dp))
                     }
-                } else {
+                } else if (selectedTab == 1) {
+                    // Ledger History Screen
                     val filteredEntries = remember(entries, ledgerSearchQuery, ledgerTypeFilter, ledgerSortOption) {
                         entries.filter { entry ->
                             val matchesSearch = entry.deficitSpendingNotes.contains(ledgerSearchQuery, ignoreCase = true) ||
@@ -356,479 +477,320 @@ fun LedgerDashboard(
                         }
                     }
 
-                    // Ledger History Title and Search Bar Row
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                modifier = Modifier.clickable { isLedgerFullscreen = !isLedgerFullscreen }.padding(4.dp)
-                            ) {
-                                Text(
-                                    text = "Ledger History",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-                                Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    shape = RoundedCornerShape(100.dp)
-                                ) {
-                                    Text(
-                                        text = "${filteredEntries.size}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                                    )
-                                }
-                                Icon(
-                                    imageVector = if (isLedgerFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                    contentDescription = "Toggle Fullscreen",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (entries.isEmpty()) {
+                            EmptyStateView {
+                                viewModel.resetForm()
+                                isAddDialogOpen = true
                             }
-
-                            // Filter toggle button
-                            IconButton(
-                                onClick = { isLedgerFiltersExpanded = !isLedgerFiltersExpanded },
-                                modifier = Modifier.testTag("ledger_filter_toggle")
-                            ) {
-                                Icon(
-                                    imageVector = if (isLedgerFiltersExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.Settings,
-                                    contentDescription = "Toggle Ledger Filtering Options",
-                                    tint = if (isLedgerFiltersExpanded || ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.outline
-                                    }
-                                )
-                            }
-                        }
-
-                        // Collapsible Filter Panel
-                        AnimatedVisibility(
-                            visible = isLedgerFiltersExpanded || ledgerSearchQuery.isNotEmpty(),
-                            enter = expandVertically() + fadeIn(),
-                            exit = shrinkVertically() + fadeOut()
-                        ) {
+                        } else {
                             Column(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)), RoundedCornerShape(12.dp))
-                                    .padding(12.dp),
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                // Search Input
-                                OutlinedTextField(
-                                    value = ledgerSearchQuery,
-                                    onValueChange = { ledgerSearchQuery = it },
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .testTag("ledger_search_field"),
-                                    placeholder = { Text("Search notes, types...") },
-                                    leadingIcon = {
-                                        Icon(
-                                            imageVector = Icons.Default.Search,
-                                            contentDescription = "Search"
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.clickable { isLedgerFullscreen = !isLedgerFullscreen }.padding(4.dp)
+                                    ) {
+                                        Text(
+                                            text = "Ledger History",
+                                            style = MaterialTheme.typography.titleMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onBackground
                                         )
-                                    },
-                                    trailingIcon = if (ledgerSearchQuery.isNotEmpty()) {
-                                        {
-                                            IconButton(onClick = { ledgerSearchQuery = "" }) {
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            shape = RoundedCornerShape(100.dp)
+                                        ) {
+                                            Text(
+                                                text = "${filteredEntries.size}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                        Icon(
+                                            imageVector = if (isLedgerFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                            contentDescription = "Toggle Fullscreen",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+
+                                    IconButton(
+                                        onClick = { isLedgerFiltersExpanded = !isLedgerFiltersExpanded },
+                                        modifier = Modifier.testTag("ledger_filter_toggle")
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isLedgerFiltersExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.Settings,
+                                            contentDescription = "Toggle Ledger Filtering Options",
+                                            tint = if (isLedgerFiltersExpanded || ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
+                                                MaterialTheme.colorScheme.primary
+                                            } else {
+                                                MaterialTheme.colorScheme.outline
+                                            }
+                                        )
+                                    }
+                                }
+
+                                AnimatedVisibility(
+                                    visible = isLedgerFiltersExpanded || ledgerSearchQuery.isNotEmpty(),
+                                    enter = expandVertically() + fadeIn(),
+                                    exit = shrinkVertically() + fadeOut()
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)), RoundedCornerShape(12.dp))
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = ledgerSearchQuery,
+                                            onValueChange = { ledgerSearchQuery = it },
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .testTag("ledger_search_field"),
+                                            placeholder = { Text("Search notes, types...") },
+                                            leadingIcon = {
                                                 Icon(
-                                                    imageVector = Icons.Default.Clear,
-                                                    contentDescription = "Clear Search"
+                                                    imageVector = Icons.Default.Search,
+                                                    contentDescription = "Search"
+                                                )
+                                            },
+                                            trailingIcon = if (ledgerSearchQuery.isNotEmpty()) {
+                                                {
+                                                    IconButton(onClick = { ledgerSearchQuery = "" }) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Clear,
+                                                            contentDescription = "Clear Search"
+                                                        )
+                                                    }
+                                                }
+                                            } else null,
+                                            singleLine = true,
+                                            textStyle = MaterialTheme.typography.bodyMedium,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                unfocusedContainerColor = MaterialTheme.colorScheme.surface,
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary,
+                                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                            )
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "FILTER BY TYPE",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(bottom = 4.dp)
+                                                )
+                                                var isTypeDropdownExpanded by remember { mutableStateOf(false) }
+                                                Box(modifier = Modifier.fillMaxWidth()) {
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { isTypeDropdownExpanded = true }
+                                                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
+                                                            .padding(10.dp),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = MaterialTheme.colorScheme.surface
+                                                    ) {
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = ledgerTypeFilter,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurface
+                                                            )
+                                                            Icon(
+                                                                imageVector = Icons.Default.ArrowDropDown,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    DropdownMenu(
+                                                        expanded = isTypeDropdownExpanded,
+                                                        onDismissRequest = { isTypeDropdownExpanded = false }
+                                                    ) {
+                                                        listOf("All", "Sale", "Product in Hand", "Deficit Only", "Loss Only").forEach { type ->
+                                                            DropdownMenuItem(
+                                                                text = { Text(type, style = MaterialTheme.typography.bodyMedium) },
+                                                                onClick = {
+                                                                    ledgerTypeFilter = type
+                                                                    isTypeDropdownExpanded = false
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "SORT BY",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(bottom = 4.dp)
+                                                )
+                                                var isSortDropdownExpanded by remember { mutableStateOf(false) }
+                                                Box(modifier = Modifier.fillMaxWidth()) {
+                                                    Surface(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .clickable { isSortDropdownExpanded = true }
+                                                            .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
+                                                            .padding(10.dp),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        color = MaterialTheme.colorScheme.surface
+                                                    ) {
+                                                        Row(
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(
+                                                                text = ledgerSortOption,
+                                                                style = MaterialTheme.typography.bodySmall,
+                                                                color = MaterialTheme.colorScheme.onSurface,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                            Icon(
+                                                                imageVector = Icons.Default.ArrowDropDown,
+                                                                contentDescription = null,
+                                                                modifier = Modifier.size(16.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    DropdownMenu(
+                                                        expanded = isSortDropdownExpanded,
+                                                        onDismissRequest = { isSortDropdownExpanded = false }
+                                                    ) {
+                                                        listOf("Newest First", "Oldest First", "Deficit (High to Low)", "Net Change (High to Low)").forEach { option ->
+                                                            DropdownMenuItem(
+                                                                text = { Text(option, style = MaterialTheme.typography.bodyMedium) },
+                                                                onClick = {
+                                                                    ledgerSortOption = option
+                                                                    isSortDropdownExpanded = false
+                                                                }
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if (ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
+                                            TextButton(
+                                                onClick = {
+                                                    ledgerTypeFilter = "All"
+                                                    ledgerSortOption = "Newest First"
+                                                    ledgerSearchQuery = ""
+                                                },
+                                                modifier = Modifier.align(Alignment.End)
+                                            ) {
+                                                Text(
+                                                    text = "Clear active filters",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
                                         }
-                                    } else null,
-                                    singleLine = true,
-                                    textStyle = MaterialTheme.typography.bodyMedium,
-                                    colors = OutlinedTextFieldDefaults.colors(
-                                        focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                        unfocusedContainerColor = MaterialTheme.colorScheme.surface,
-                                        focusedBorderColor = MaterialTheme.colorScheme.primary,
-                                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                                    )
-                                )
+                                    }
+                                }
+                            }
 
-                                // Filtering row
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            if (filteredEntries.isEmpty()) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .weight(1f)
+                                        .padding(32.dp),
+                                    contentAlignment = Alignment.Center
                                 ) {
-                                    // Filter dropdown / selector
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "FILTER BY TYPE",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(bottom = 4.dp)
-                                        )
-                                        var isTypeDropdownExpanded by remember { mutableStateOf(false) }
-                                        Box(modifier = Modifier.fillMaxWidth()) {
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable { isTypeDropdownExpanded = true }
-                                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
-                                                    .padding(10.dp),
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = MaterialTheme.colorScheme.surface
-                                            ) {
-                                                Row(
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = ledgerTypeFilter,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    Icon(
-                                                        imageVector = Icons.Default.ArrowDropDown,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                            DropdownMenu(
-                                                expanded = isTypeDropdownExpanded,
-                                                onDismissRequest = { isTypeDropdownExpanded = false }
-                                            ) {
-                                                listOf("All", "Sale", "Product in Hand", "Deficit Only", "Loss Only").forEach { type ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(type, style = MaterialTheme.typography.bodyMedium) },
-                                                        onClick = {
-                                                            ledgerTypeFilter = type
-                                                            isTypeDropdownExpanded = false
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Sorting option dropdown / selector
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "SORT BY",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.padding(bottom = 4.dp)
-                                        )
-                                        var isSortDropdownExpanded by remember { mutableStateOf(false) }
-                                        Box(modifier = Modifier.fillMaxWidth()) {
-                                            Surface(
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .clickable { isSortDropdownExpanded = true }
-                                                    .border(BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant), RoundedCornerShape(8.dp))
-                                                    .padding(10.dp),
-                                                shape = RoundedCornerShape(8.dp),
-                                                color = MaterialTheme.colorScheme.surface
-                                            ) {
-                                                Row(
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Text(
-                                                        text = ledgerSortOption,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurface,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Icon(
-                                                        imageVector = Icons.Default.ArrowDropDown,
-                                                        contentDescription = null,
-                                                        modifier = Modifier.size(16.dp)
-                                                    )
-                                                }
-                                            }
-                                            DropdownMenu(
-                                                expanded = isSortDropdownExpanded,
-                                                onDismissRequest = { isSortDropdownExpanded = false }
-                                            ) {
-                                                listOf("Newest First", "Oldest First", "Deficit (High to Low)", "Net Change (High to Low)").forEach { option ->
-                                                    DropdownMenuItem(
-                                                        text = { Text(option, style = MaterialTheme.typography.bodyMedium) },
-                                                        onClick = {
-                                                            ledgerSortOption = option
-                                                            isSortDropdownExpanded = false
-                                                        }
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Reset filters row
-                                if (ledgerTypeFilter != "All" || ledgerSortOption != "Newest First" || ledgerSearchQuery.isNotEmpty()) {
-                                    TextButton(
-                                        onClick = {
-                                            ledgerTypeFilter = "All"
-                                            ledgerSortOption = "Newest First"
-                                            ledgerSearchQuery = ""
-                                        },
-                                        modifier = Modifier.align(Alignment.End)
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Search,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.outline,
+                                            modifier = Modifier.size(48.dp)
+                                        )
                                         Text(
-                                            text = "Clear active filters",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            fontWeight = FontWeight.Bold
+                                            text = "No matching records found",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Try adjusting your search notes, types, or sort order",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
                                         )
                                     }
                                 }
-                            }
-                        }
-                    }
-
-                    if (filteredEntries.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .padding(32.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Search,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.outline,
-                                    modifier = Modifier.size(48.dp)
-                                )
-                                Text(
-                                    text = "No matching records found",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = "Try adjusting your search notes, types, or sort order",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .weight(1f)
-                                .testTag("ledger_list"),
-                            contentPadding = PaddingValues(bottom = 80.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(
-                                items = filteredEntries,
-                                key = { it.id }
-                            ) { entry ->
-                                LedgerCard(
-                                    entry = entry,
-                                    onEdit = {
-                                        viewModel.startEditingEntry(entry)
-                                        isAddDialogOpen = true
-                                    },
-                                    onDelete = { viewModel.deleteEntry(entry.id) },
-                                    onCardClick = {
-                                        detailedEntry = entry
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .weight(1f)
+                                        .testTag("ledger_list"),
+                                    contentPadding = PaddingValues(bottom = 80.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    items(
+                                        items = filteredEntries,
+                                        key = { it.id }
+                                    ) { entry ->
+                                        LedgerCard(
+                                            entry = entry,
+                                            onEdit = {
+                                                viewModel.startEditingEntry(entry)
+                                                isAddDialogOpen = true
+                                            },
+                                            onDelete = { viewModel.deleteEntry(entry.id) },
+                                            onCardClick = {
+                                                detailedEntry = entry
+                                            }
+                                        )
                                     }
-                                )
-                            }
-                        }
-                    }
-                }
-            } else if (selectedTab == 1) {
-                // Manual Transactions View
-                val filteredTransactions = filterTransactions(
-                    transactions = transactions,
-                    category = filterCategory,
-                    dateRangePreset = filterDateRangePreset,
-                    customStart = customStartDate,
-                    customEnd = customEndDate
-                )
-
-                TransactionMetricsPanel(filteredTransactions)
-
-                if (transactions.isEmpty()) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(120.dp)
-                                    .clip(RoundedCornerShape(100.dp))
-                                    .background(MaterialTheme.colorScheme.secondaryContainer),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Star,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                    modifier = Modifier.size(64.dp)
-                                )
-                            }
-
-                            Text(
-                                text = "No Transactions Yet",
-                                style = MaterialTheme.typography.headlineSmall,
-                                fontWeight = FontWeight.Black,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-
-                            Text(
-                                text = "Track physical and manual financial flows with custom dates, specific categories, details, and exact monetary values.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                textAlign = TextAlign.Center,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-
-                            Button(
-                                onClick = {
-                                    viewModel.resetTxForm()
-                                    isAddTxDialogOpen = true
-                                },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.testTag("empty_state_add_tx_button")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Add,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Create First Transaction", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 } else {
-                    TransactionFilterBar(
-                        selectedCategory = filterCategory,
-                        onCategorySelected = { filterCategory = it },
-                        selectedDateRange = filterDateRangePreset,
-                        onDateRangeSelected = { filterDateRangePreset = it },
-                        customStartDate = customStartDate,
-                        onCustomStartSelected = { customStartDate = it },
-                        customEndDate = customEndDate,
-                        onCustomEndSelected = { customEndDate = it },
-                        onResetFilters = {
-                            filterCategory = "All"
-                            filterDateRangePreset = "All Time"
-                            customStartDate = ""
-                            customEndDate = ""
-                        }
+                    // Wallet Accounts / Balance View
+                    val walletAccounts by viewModel.walletAccounts.collectAsStateWithLifecycle()
+                    val totalWalletBalance by viewModel.totalWalletBalance.collectAsStateWithLifecycle()
+                    WalletAccountsView(
+                        walletAccounts = walletAccounts,
+                        totalWalletBalance = totalWalletBalance,
+                        onUpdateBalance = { id, balance -> viewModel.updateWalletAccountBalance(id, balance) }
                     )
-
-                    if (filteredTransactions.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .weight(1f)
-                                .padding(24.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(16.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(80.dp)
-                                        .clip(RoundedCornerShape(40.dp))
-                                        .background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Info,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                        modifier = Modifier.size(40.dp)
-                                    )
-                                }
-
-                                Text(
-                                    text = "No Matching Transactions",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onBackground
-                                )
-
-                                Text(
-                                    text = "No stored transactions match your current category or date range filter.",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textAlign = TextAlign.Center,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.padding(horizontal = 24.dp)
-                                )
-
-                                Button(
-                                    onClick = {
-                                        filterCategory = "All"
-                                        filterDateRangePreset = "All Time"
-                                        customStartDate = ""
-                                        customEndDate = ""
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.testTag("filter_reset_empty_button")
-                                ) {
-                                    Text("Clear All Filters", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    } else {
-                        SortableTransactionTable(
-                            transactions = filteredTransactions,
-                            onEdit = { transaction ->
-                                viewModel.startEditingTransaction(transaction)
-                                isAddTxDialogOpen = true
-                            },
-                            onDelete = { id -> viewModel.deleteTransaction(id) }
-                        )
-                    }
                 }
-            } else {
-                // Wallet Accounts View
-                val walletAccounts by viewModel.walletAccounts.collectAsStateWithLifecycle()
-                val totalWalletBalance by viewModel.totalWalletBalance.collectAsStateWithLifecycle()
-                WalletAccountsView(
-                    walletAccounts = walletAccounts,
-                    totalWalletBalance = totalWalletBalance,
-                    onUpdateBalance = { id, balance -> viewModel.updateWalletAccountBalance(id, balance) }
-                )
             }
         }
     }
@@ -4278,6 +4240,16 @@ fun WalletAccountCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         fontFamily = FontFamily.Monospace
                     )
+                    if (account.lastUpdated > 0L) {
+                        val sdf = remember { SimpleDateFormat("MMM dd, yyyy h:mm a", Locale.getDefault()) }
+                        val formattedDate = remember(account.lastUpdated) { sdf.format(java.util.Date(account.lastUpdated)) }
+                        Text(
+                            text = "Last Entry: $formattedDate",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 

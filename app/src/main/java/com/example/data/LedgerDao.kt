@@ -44,6 +44,6 @@ interface LedgerDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertWalletAccounts(accounts: List<WalletAccount>)
 
-    @Query("UPDATE wallet_accounts SET balance = :balance WHERE id = :id")
-    suspend fun updateWalletAccountBalance(id: String, balance: Double)
+    @Query("UPDATE wallet_accounts SET balance = :balance, lastUpdated = :lastUpdated WHERE id = :id")
+    suspend fun updateWalletAccountBalance(id: String, balance: Double, lastUpdated: Long)
 }

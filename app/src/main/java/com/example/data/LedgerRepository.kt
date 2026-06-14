@@ -40,7 +40,7 @@ class LedgerRepository(private val ledgerDao: LedgerDao) {
         ledgerDao.insertWalletAccounts(accounts)
     }
 
-    suspend fun updateWalletAccountBalance(id: String, balance: Double) {
-        ledgerDao.updateWalletAccountBalance(id, balance)
+    suspend fun updateWalletAccountBalance(id: String, balance: Double, lastUpdated: Long) {
+        ledgerDao.updateWalletAccountBalance(id, balance, lastUpdated)
     }
 }

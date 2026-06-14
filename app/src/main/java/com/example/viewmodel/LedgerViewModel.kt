@@ -205,7 +205,7 @@ class LedgerViewModel(
 
     fun updateWalletAccountBalance(id: String, balance: Double) {
         viewModelScope.launch {
-            repository.updateWalletAccountBalance(id, balance)
+            repository.updateWalletAccountBalance(id, balance, System.currentTimeMillis())
         }
     }
 
