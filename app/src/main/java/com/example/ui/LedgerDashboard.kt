@@ -119,6 +119,7 @@ fun LedgerDashboard(
     var customStartDate by remember { mutableStateOf("") }
     var customEndDate by remember { mutableStateOf("") }
     var isFabExpanded by remember { mutableStateOf(false) }
+    var isLedgerFullscreen by remember { mutableStateOf(false) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -269,49 +270,55 @@ fun LedgerDashboard(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // Improved Tab Selector using Material 3 TabRow
-            PrimaryTabRow(
-                selectedTabIndex = selectedTab,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                containerColor = Color.Transparent,
-                divider = {}
-            ) {
-                listOf("Points Ledger", "Manual Transactions", "Wallet Accounts").forEachIndexed { index, title ->
-                    Tab(
-                        selected = selectedTab == index,
-                        onClick = { selectedTab = index },
-                        text = {
-                            Text(
-                                text = title,
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        },
-                        icon = {
-                            Icon(
-                                imageVector = when (index) {
-                                    0 -> if (selectedTab == index) Icons.Default.ShoppingCart else Icons.Outlined.ShoppingCart
-                                    1 -> if (selectedTab == index) Icons.Default.Star else Icons.Outlined.Star
-                                    else -> if (selectedTab == index) Icons.Default.List else Icons.Outlined.List
-                                },
-                                contentDescription = null,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        },
-                        selectedContentColor = MaterialTheme.colorScheme.primary,
-                        unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.testTag("tab_selector_$index")
-                    )
+            AnimatedVisibility(visible = !isLedgerFullscreen) {
+                PrimaryTabRow(
+                    selectedTabIndex = selectedTab,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    containerColor = Color.Transparent,
+                    divider = {}
+                ) {
+                    listOf("Points Ledger", "Manual Transactions", "Wallet Accounts").forEachIndexed { index, title ->
+                        Tab(
+                            selected = selectedTab == index,
+                            onClick = { selectedTab = index },
+                            text = {
+                                Text(
+                                    text = title,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (selectedTab == index) FontWeight.Bold else FontWeight.Medium,
+                                    textAlign = TextAlign.Center,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
+                            icon = {
+                                Icon(
+                                    imageVector = when (index) {
+                                        0 -> if (selectedTab == index) Icons.Default.ShoppingCart else Icons.Outlined.ShoppingCart
+                                        1 -> if (selectedTab == index) Icons.Default.Star else Icons.Outlined.Star
+                                        else -> if (selectedTab == index) Icons.Default.List else Icons.Outlined.List
+                                    },
+                                    contentDescription = null,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            },
+                            selectedContentColor = MaterialTheme.colorScheme.primary,
+                            unselectedContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("tab_selector_$index")
+                        )
+                    }
                 }
             }
 
             if (selectedTab == 0) {
                 // Points Ledger View
-                MetricsSummaryPanel(entries)
-                DailySummaryWidget(entries)
-                MonthlySummaryWidget(entries)
+                AnimatedVisibility(visible = !isLedgerFullscreen) {
+                    Column {
+                        MetricsSummaryPanel(entries)
+                        DailySummaryWidget(entries)
+                        MonthlySummaryWidget(entries)
+                    }
+                }
 
                 if (entries.isEmpty()) {
                     EmptyStateView {
@@ -361,7 +368,8 @@ fun LedgerDashboard(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.clickable { isLedgerFullscreen = !isLedgerFullscreen }.padding(4.dp)
                             ) {
                                 Text(
                                     text = "Ledger History",
@@ -381,6 +389,12 @@ fun LedgerDashboard(
                                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                     )
                                 }
+                                Icon(
+                                    imageVector = if (isLedgerFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                    contentDescription = "Toggle Fullscreen",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
                             }
 
                             // Filter toggle button
@@ -794,36 +808,14 @@ fun LedgerDashboard(
                             }
                         }
                     } else {
-                        Text(
-                            text = "Transaction History",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            color = MaterialTheme.colorScheme.onBackground
+                        SortableTransactionTable(
+                            transactions = filteredTransactions,
+                            onEdit = { transaction ->
+                                viewModel.startEditingTransaction(transaction)
+                                isAddTxDialogOpen = true
+                            },
+                            onDelete = { id -> viewModel.deleteTransaction(id) }
                         )
-
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .weight(1f)
-                                .testTag("tx_list"),
-                            contentPadding = PaddingValues(bottom = 80.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            items(
-                                items = filteredTransactions,
-                                key = { it.id }
-                            ) { transaction ->
-                                TransactionCard(
-                                    transaction = transaction,
-                                    onEdit = {
-                                        viewModel.startEditingTransaction(transaction)
-                                        isAddTxDialogOpen = true
-                                    },
-                                    onDelete = { viewModel.deleteTransaction(transaction.id) }
-                                )
-                            }
-                        }
                     }
                 }
             } else {
@@ -4836,6 +4828,197 @@ fun DetailMetricRow(
             color = valueColor,
             fontWeight = fontWeight
         )
+    }
+}
+
+enum class SortColumn { DATE, CATEGORY, AMOUNT }
+
+@Composable
+fun SortableHeader(
+    title: String,
+    column: SortColumn,
+    currentSortColumn: SortColumn,
+    sortAscending: Boolean,
+    onHeaderClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clickable { onHeaderClick() }
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (currentSortColumn == column) {
+            Icon(
+                imageVector = if (sortAscending) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                contentDescription = null,
+                modifier = Modifier
+                    .size(14.dp)
+                    .padding(start = 2.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+fun SortableTransactionTable(
+    transactions: List<FinancialTransaction>,
+    onEdit: (FinancialTransaction) -> Unit,
+    onDelete: (Int) -> Unit
+) {
+    var sortColumn by remember { mutableStateOf(SortColumn.DATE) }
+    var sortAscending by remember { mutableStateOf(false) }
+
+    val sortedData = remember(transactions, sortColumn, sortAscending) {
+        when (sortColumn) {
+            SortColumn.DATE -> if (sortAscending) transactions.sortedBy { it.date } else transactions.sortedByDescending { it.date }
+            SortColumn.CATEGORY -> if (sortAscending) transactions.sortedBy { it.category } else transactions.sortedByDescending { it.category }
+            SortColumn.AMOUNT -> if (sortAscending) transactions.sortedBy { it.amount } else transactions.sortedByDescending { it.amount }
+        }
+    }
+
+    val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        // Headers
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.surfaceVariant,
+                    RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp)
+                )
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            SortableHeader(
+                title = "Date",
+                column = SortColumn.DATE,
+                currentSortColumn = sortColumn,
+                sortAscending = sortAscending,
+                onHeaderClick = {
+                    if (sortColumn == SortColumn.DATE) sortAscending = !sortAscending else { sortColumn = SortColumn.DATE; sortAscending = true }
+                },
+                modifier = Modifier.weight(1.5f)
+            )
+            SortableHeader(
+                title = "Details",
+                column = SortColumn.CATEGORY,
+                currentSortColumn = sortColumn,
+                sortAscending = sortAscending,
+                onHeaderClick = {
+                    if (sortColumn == SortColumn.CATEGORY) sortAscending = !sortAscending else { sortColumn = SortColumn.CATEGORY; sortAscending = true }
+                },
+                modifier = Modifier.weight(2.5f)
+            )
+            SortableHeader(
+                title = "Amount",
+                column = SortColumn.AMOUNT,
+                currentSortColumn = sortColumn,
+                sortAscending = sortAscending,
+                onHeaderClick = {
+                    if (sortColumn == SortColumn.AMOUNT) sortAscending = !sortAscending else { sortColumn = SortColumn.AMOUNT; sortAscending = true }
+                },
+                modifier = Modifier.weight(1.5f)
+            )
+            Text(
+                text = "Action",
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.weight(1f),
+                textAlign = TextAlign.Center
+            )
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .testTag("tx_list"),
+            contentPadding = PaddingValues(bottom = 80.dp)
+        ) {
+            items(
+                items = sortedData,
+                key = { it.id }
+            ) { tx ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        .padding(vertical = 12.dp, horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1.5f)) {
+                        Text(
+                            text = tx.date,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Column(modifier = Modifier.weight(2.5f)) {
+                        Text(
+                            text = tx.category,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = tx.description,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Column(modifier = Modifier.weight(1.5f)) {
+                        Text(
+                            text = usdFormatter.format(tx.amount),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (tx.category == "Income") Color(0xFF00833E) else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        IconButton(
+                            onClick = { onEdit(tx) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        IconButton(
+                            onClick = { onDelete(tx.id) },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                modifier = Modifier.size(16.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
