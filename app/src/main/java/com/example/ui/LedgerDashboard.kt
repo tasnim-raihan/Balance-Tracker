@@ -124,7 +124,8 @@ fun LedgerDashboard(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         topBar = {
-            TopAppBar(
+            AnimatedVisibility(visible = !isLedgerFullscreen) {
+                TopAppBar(
                 title = {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -208,9 +209,10 @@ fun LedgerDashboard(
                     containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)
                 )
             )
+            }
         },
         floatingActionButton = {
-            if (selectedTab < 2) {
+            if (selectedTab < 2 && !isLedgerFullscreen) {
                 Column(
                     horizontalAlignment = Alignment.End,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -2109,7 +2111,9 @@ fun TransactionBadge(type: String) {
             style = MaterialTheme.typography.labelSmall,
             fontWeight = FontWeight.ExtraBold,
             color = txtColor,
-            fontSize = 10.sp
+            fontSize = 10.sp,
+            maxLines = 1,
+            softWrap = false
         )
     }
 }
@@ -2820,7 +2824,8 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
                     text = "LIVE CALCULATED PREVIEW",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f)
                 )
 
                 // Quick badge
@@ -4526,7 +4531,7 @@ fun LedgerDetailDialog(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
                             Text(
                                 text = "TIMESTAMP",
                                 style = MaterialTheme.typography.labelSmall,
@@ -4735,7 +4740,7 @@ fun LedgerDetailDialog(
                 // Actions Footer Row: Edit, Delete, Close
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     OutlinedButton(
@@ -4744,11 +4749,12 @@ fun LedgerDetailDialog(
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f)),
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("ledger_detail_delete_button")
+                            .testTag("ledger_detail_delete_button"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Delete")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
 
                     OutlinedButton(
@@ -4756,20 +4762,22 @@ fun LedgerDetailDialog(
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary),
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("ledger_detail_edit_button")
+                            .testTag("ledger_detail_edit_button"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
                         Icon(imageVector = Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Edit")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Edit", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
 
                     Button(
                         onClick = onDismiss,
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("ledger_detail_close_button")
+                            .testTag("ledger_detail_close_button"),
+                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 8.dp)
                     ) {
-                        Text("Close")
+                        Text("Close", maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
             }
@@ -4820,13 +4828,16 @@ fun DetailMetricRow(
         Text(
             text = label,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f)
         )
         Text(
             text = value,
             style = MaterialTheme.typography.bodyMedium,
             color = valueColor,
-            fontWeight = fontWeight
+            fontWeight = fontWeight,
+            textAlign = TextAlign.End,
+            modifier = Modifier.padding(start = 8.dp)
         )
     }
 }
