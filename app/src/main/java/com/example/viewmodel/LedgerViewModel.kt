@@ -47,11 +47,22 @@ class LedgerViewModel(
     val editingEntryId = MutableStateFlow<Int?>(null)
     val deficitFields = MutableStateFlow<List<DeficitField>>(emptyList())
 
+    val isLoading = MutableStateFlow(true)
+
     init {
         loadDrafts()
         startAutoSaving()
         initializeWalletAccounts()
         observeDeficitFields()
+        observeLoadingState()
+    }
+
+    private fun observeLoadingState() {
+        viewModelScope.launch {
+            // Emulate a short retrieval processing delay from SQLite local store to display skeleton/spinner beautifully
+            kotlinx.coroutines.delay(650)
+            isLoading.value = false
+        }
     }
 
     private fun observeDeficitFields() {
@@ -516,6 +527,64 @@ class LedgerViewModel(
         val nowStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
         ledgerTimestampText.value = nowStr
         editingEntryId.value = null
+    }
+
+    /**
+     * Imports a list of ledger entries parsed from a JSON string.
+     */
+    fun importLedgerFromJson(jsonString: String, onSuccess: (Int) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val jsonArray = org.json.JSONArray(jsonString)
+                val importedList = mutableListOf<LedgerEntry>()
+                for (i in 0 until jsonArray.length()) {
+                    val obj = jsonArray.getJSONObject(i)
+                    
+                    val timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+                    val previousPoints = obj.optInt("previousPoints", 0)
+                    val availablePoints = obj.optInt("availablePoints", 0)
+                    val transactionType = obj.optString("transactionType", "")
+                    val transactionAmount = obj.optInt("transactionAmount", 0)
+                    val previousBalance = obj.optInt("previousBalance", 0)
+                    val expectedBalance = obj.optInt("expectedBalance", 0)
+                    val walletBalance = obj.optInt("walletBalance", 0)
+                    val deficit = obj.optInt("deficit", 0)
+                    val deficitSpendingNotes = obj.optString("deficitSpendingNotes", "")
+                    val declaredDeficit = obj.optInt("declaredDeficit", 0)
+                    val loss = obj.optInt("loss", 0)
+                    
+                    importedList.add(
+                        LedgerEntry(
+                            id = 0,
+                            timestamp = timestamp,
+                            previousPoints = previousPoints,
+                            availablePoints = availablePoints,
+                            transactionType = transactionType,
+                            transactionAmount = transactionAmount,
+                            previousBalance = previousBalance,
+                            expectedBalance = expectedBalance,
+                            walletBalance = walletBalance,
+                            deficit = deficit,
+                            deficitSpendingNotes = deficitSpendingNotes,
+                            declaredDeficit = declaredDeficit,
+                            loss = loss
+                        )
+                    )
+                }
+                
+                if (importedList.isEmpty()) {
+                    onError("No valid ledger records found in the JSON file.")
+                    return@launch
+                }
+                
+                for (entry in importedList) {
+                    repository.insert(entry)
+                }
+                onSuccess(importedList.size)
+            } catch (e: Exception) {
+                onError(e.localizedMessage ?: "Unknown parsing error")
+            }
+        }
     }
 
     fun addDeficitField() {
