@@ -53,6 +53,7 @@ class LedgerViewModel(
         loadDrafts()
         startAutoSaving()
         initializeWalletAccounts()
+        initializeLedgerEntries()
         observeDeficitFields()
         observeLoadingState()
     }
@@ -239,6 +240,69 @@ class LedgerViewModel(
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    private fun initializeLedgerEntries() {
+        viewModelScope.launch {
+            try {
+                val currentEntries = repository.allEntries.first()
+                if (currentEntries.isEmpty()) {
+                    loadAndInsertSampleData()
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private suspend fun loadAndInsertSampleData() {
+        val jsonString = context.assets.open("ledger_records.json").bufferedReader().use { it.readText() }
+        val jsonArray = org.json.JSONArray(jsonString)
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val id = obj.optInt("id", 0)
+            val timestamp = obj.optLong("timestamp", System.currentTimeMillis())
+            val previousPoints = obj.optInt("previousPoints", 0)
+            val availablePoints = obj.optInt("availablePoints", 0)
+            val transactionType = obj.optString("transactionType", "")
+            val transactionAmount = obj.optInt("transactionAmount", 0)
+            val previousBalance = obj.optInt("previousBalance", 0)
+            val expectedBalance = obj.optInt("expectedBalance", 0)
+            val walletBalance = obj.optInt("walletBalance", 0)
+            val deficit = obj.optInt("deficit", 0)
+            val deficitSpendingNotes = obj.optString("deficitSpendingNotes", "")
+            val declaredDeficit = obj.optInt("declaredDeficit", 0)
+            val loss = obj.optInt("loss", 0)
+            
+            repository.insert(
+                LedgerEntry(
+                    id = id,
+                    timestamp = timestamp,
+                    previousPoints = previousPoints,
+                    availablePoints = availablePoints,
+                    transactionType = transactionType,
+                    transactionAmount = transactionAmount,
+                    previousBalance = previousBalance,
+                    expectedBalance = expectedBalance,
+                    walletBalance = walletBalance,
+                    deficit = deficit,
+                    deficitSpendingNotes = deficitSpendingNotes,
+                    declaredDeficit = declaredDeficit,
+                    loss = loss
+                )
+            )
+        }
+    }
+
+    fun importProvidedLedgerRecords(onSuccess: (Int) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                loadAndInsertSampleData()
+                onSuccess(5)
+            } catch (e: Exception) {
+                onError(e.localizedMessage ?: "Unknown parsing error")
             }
         }
     }
@@ -555,7 +619,7 @@ class LedgerViewModel(
                     
                     importedList.add(
                         LedgerEntry(
-                            id = 0,
+                            id = obj.optInt("id", 0),
                             timestamp = timestamp,
                             previousPoints = previousPoints,
                             availablePoints = availablePoints,
