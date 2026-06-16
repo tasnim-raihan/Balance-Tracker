@@ -14,8 +14,44 @@ object LedgerCalculator {
         val expectedBalance: Int,
         val deficit: Int,
         val declaredDeficit: Int,
-        val loss: Int
+        val ledgerLoss: Int,
+        val realizedProfit: Double
+    ) {
+        val isSurplus: Boolean get() = deficit < 0
+        val totalVariance: Int get() = if (isSurplus) abs(deficit) else deficit
+        val unexplainedRemainingProfit: Int get() = if (isSurplus) (totalVariance - declaredDeficit) else 0
+        val unexplainedRemainingLoss: Int get() = if (!isSurplus) ledgerLoss else 0
+    }
+
+    data class VarianceAnalysisResult(
+        val isSurplus: Boolean,
+        val totalVariance: Int,
+        val unexplainedRemainingProfit: Int,
+        val unexplainedRemainingLoss: Int
     )
+
+    /**
+     * Processes user inputs to determine 'Total Variance (Cash Surplus)' and 'Unexplained Remaining (Profit)'
+     * based on the refined algorithms.
+     */
+    fun analyzeVariance(
+        expectedBalance: Int,
+        walletBalance: Int,
+        totalSpendingBreakdown: Int
+    ): VarianceAnalysisResult {
+        val deficit = expectedBalance - walletBalance
+        val isSurplus = deficit < 0
+        val totalVariance = if (isSurplus) abs(deficit) else deficit
+        val unexplainedRemainingProfit = if (isSurplus) totalVariance - totalSpendingBreakdown else 0
+        val unexplainedRemainingLoss = if (!isSurplus) deficit - totalSpendingBreakdown else 0
+
+        return VarianceAnalysisResult(
+            isSurplus = isSurplus,
+            totalVariance = totalVariance,
+            unexplainedRemainingProfit = unexplainedRemainingProfit,
+            unexplainedRemainingLoss = unexplainedRemainingLoss
+        )
+    }
 
     /**
      * Executes the 4-step auto-calculation rules:
@@ -25,7 +61,8 @@ object LedgerCalculator {
      *     - If Net Change < 0: Set transactionType to "Product in Hand" and transactionAmount to absolute value.
      * - Step 3 (Expected Balance): Add Net Change to Previous Balance.
      * - Step 4 (Deficit Calculation): Subtract Wallet Balance from Expected Balance.
-     * - Deficit/Loss matching: Compute difference between expected deficit and user-declared deficit as loss.
+     * - Step 5 (Deficit Parsing & Ledger Loss): Subtract declaredDeficit from deficit.
+     * - Step 6 (Business Profit & Loss Calculation): Compute based on initial bulk purchasing amount.
      */
     fun calculate(
         previousPoints: Int,
@@ -47,11 +84,18 @@ object LedgerCalculator {
         // Step 4: Deficit Calculation
         val deficit = expectedBalance - walletBalance
 
-        // Loss is the remaining unexplained deficit if total deficit doesn't match declared Deficit
-        val loss = if (deficit != declaredDeficit) {
-            deficit - declaredDeficit
+        // Step 5: Ledger loss calculation
+        val ledgerLoss = deficit - declaredDeficit
+
+        // Step 6: Business Profit & Loss Calculation
+        val costBasisPerPoint = 22000.0 / 43000.0
+        val salePricePerPoint = 1.0
+        val profitMarginPerPoint = salePricePerPoint - costBasisPerPoint
+
+        val realizedProfit = if (transactionType == "Sale") {
+            transactionAmount * profitMarginPerPoint
         } else {
-            0
+            -(transactionAmount * profitMarginPerPoint)
         }
 
         return CalculationResult(
@@ -61,7 +105,8 @@ object LedgerCalculator {
             expectedBalance = expectedBalance,
             deficit = deficit,
             declaredDeficit = declaredDeficit,
-            loss = loss
+            ledgerLoss = ledgerLoss,
+            realizedProfit = realizedProfit
         )
     }
 }

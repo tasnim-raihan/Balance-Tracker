@@ -18,5 +18,6 @@ data class LedgerEntry(
     val deficit: Int,
     val deficitSpendingNotes: String,
     val declaredDeficit: Int = 0,
-    val loss: Int = 0
+    val ledgerLoss: Int = 0,
+    val realizedProfit: Double = 0.0
 )

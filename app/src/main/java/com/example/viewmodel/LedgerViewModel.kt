@@ -274,7 +274,8 @@ class LedgerViewModel(
             val deficit = obj.optInt("deficit", 0)
             val deficitSpendingNotes = obj.optString("deficitSpendingNotes", "")
             val declaredDeficit = obj.optInt("declaredDeficit", 0)
-            val loss = obj.optInt("loss", 0)
+            val ledgerLoss = obj.optInt("ledgerLoss", 0)
+            val realizedProfit = obj.optDouble("realizedProfit", 0.0)
             
             repository.insert(
                 LedgerEntry(
@@ -290,7 +291,8 @@ class LedgerViewModel(
                     deficit = deficit,
                     deficitSpendingNotes = deficitSpendingNotes,
                     declaredDeficit = declaredDeficit,
-                    loss = loss
+                    ledgerLoss = ledgerLoss,
+                    realizedProfit = realizedProfit
                 )
             )
         }
@@ -516,7 +518,8 @@ class LedgerViewModel(
             deficit = calc.deficit,
             deficitSpendingNotes = notes,
             declaredDeficit = dDef,
-            loss = calc.loss
+            ledgerLoss = calc.ledgerLoss,
+            realizedProfit = calc.realizedProfit
         )
 
         viewModelScope.launch {
@@ -615,7 +618,8 @@ class LedgerViewModel(
                     val deficit = obj.optInt("deficit", 0)
                     val deficitSpendingNotes = obj.optString("deficitSpendingNotes", "")
                     val declaredDeficit = obj.optInt("declaredDeficit", 0)
-                    val loss = obj.optInt("loss", 0)
+                    val ledgerLoss = obj.optInt("ledgerLoss", 0)
+                    val realizedProfit = obj.optDouble("realizedProfit", 0.0)
                     
                     importedList.add(
                         LedgerEntry(
@@ -631,7 +635,8 @@ class LedgerViewModel(
                             deficit = deficit,
                             deficitSpendingNotes = deficitSpendingNotes,
                             declaredDeficit = declaredDeficit,
-                            loss = loss
+                            ledgerLoss = ledgerLoss,
+                            realizedProfit = realizedProfit
                         )
                     )
                 }

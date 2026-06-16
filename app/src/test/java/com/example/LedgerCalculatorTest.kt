@@ -7,11 +7,12 @@ import org.junit.Test
 class LedgerCalculatorTest {
 
     @Test
-    fun testCalculate_SalePattern() {
+    fun testCalculate_SalePattern_AndProfit() {
         // Step 1: Net Change = 100 - 75 = +25 (Net Change > 0)
         // Step 2: Since positive, transactionType must be "Sale", transactionAmount = 25
         // Step 3: Expected Balance = Previous Balance (1000) + Net Change (25) = 1025
         // Step 4: Deficit = Expected Balance (1025) - Wallet Balance (1000) = 25
+        // Step 6: Cost = 22000.0/43000.0, Sale = 1.0, Margin = ~0.48837, Expected Profit = 25 * 0.4883720930232558
         val result = LedgerCalculator.calculate(
             previousPoints = 100,
             availablePoints = 75,
@@ -24,10 +25,13 @@ class LedgerCalculatorTest {
         assertEquals(25, result.transactionAmount)
         assertEquals(1025, result.expectedBalance)
         assertEquals(25, result.deficit)
+        
+        val expectedProfit = 25 * (1.0 - (22000.0 / 43000.0))
+        assertEquals(expectedProfit, result.realizedProfit, 0.0001)
     }
 
     @Test
-    fun testCalculate_ProductInHandPattern() {
+    fun testCalculate_ProductInHandPattern_AndProfitReversal() {
         // Step 1: Net Change = 50 - 90 = -40 (Net Change < 0)
         // Step 2: Since negative, transactionType must be "Product in Hand", transactionAmount = abs(-40) = 40
         // Step 3: Expected Balance = Previous Balance (500) + Net Change (-40) = 460
@@ -44,6 +48,9 @@ class LedgerCalculatorTest {
         assertEquals(40, result.transactionAmount)
         assertEquals(460, result.expectedBalance)
         assertEquals(-40, result.deficit)
+
+        val expectedProfitReversal = -(40 * (1.0 - (22000.0 / 43000.0)))
+        assertEquals(expectedProfitReversal, result.realizedProfit, 0.0001)
     }
 
     @Test
@@ -120,7 +127,7 @@ class LedgerCalculatorTest {
         // Since Deficit (125) matches declaredDeficit (125), Loss = 0
         assertEquals(125, result.deficit)
         assertEquals(125, result.declaredDeficit)
-        assertEquals(0, result.loss)
+        assertEquals(0, result.ledgerLoss)
     }
 
     @Test
@@ -137,7 +144,7 @@ class LedgerCalculatorTest {
         // Since Deficit (125) does not match declaredDeficit (50), Loss = 125 - 50 = 75
         assertEquals(125, result.deficit)
         assertEquals(50, result.declaredDeficit)
-        assertEquals(75, result.loss)
+        assertEquals(75, result.ledgerLoss)
     }
 
     @Test
