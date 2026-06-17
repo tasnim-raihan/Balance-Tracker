@@ -2104,6 +2104,10 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
     var expanded by remember { mutableStateOf(false) }
     val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
     
+    val monthName = remember {
+        SimpleDateFormat("MMMM yyyy", Locale.getDefault()).format(Date())
+    }
+
     val monthEntries = remember(entries) {
         val todayCal = Calendar.getInstance()
         val todayYear = todayCal.get(Calendar.YEAR)
@@ -2114,10 +2118,45 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
         }
     }
 
-    val monthlyIncome = monthEntries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
-    val monthlyExpenses = monthEntries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
-    val monthlyNetProfit = monthlyIncome - monthlyExpenses
-    val monthlyLoss = monthEntries.sumOf { it.ledgerLoss }
+    val monthlyBaseIncome = monthEntries.filter { it.transactionType == "Sale" }.sumOf { it.transactionAmount }
+    val monthlyBaseExpenses = monthEntries.filter { it.transactionType == "Product in Hand" }.sumOf { it.transactionAmount }
+    
+    val totalItemizedEarnings = remember(monthEntries) {
+        monthEntries.sumOf { entry ->
+            val parsed = parseFullLedgerNotes(entry.deficitSpendingNotes)
+            var sum = 0
+            parsed.earningFields.forEach { sum += it.amount }
+            sum
+        }
+    }
+    val totalItemizedSpending = remember(monthEntries) {
+        monthEntries.sumOf { entry ->
+            val parsed = parseFullLedgerNotes(entry.deficitSpendingNotes)
+            var sum = 0
+            parsed.deficitFields.forEach { sum += it.amount }
+            sum
+        }
+    }
+
+    // Aggregate values
+    val totalExpectedBalance = remember(monthEntries) { monthEntries.sumOf { it.expectedBalance } }
+    val totalWalletBalance = remember(monthEntries) { monthEntries.sumOf { it.walletBalance } }
+    
+    // Calculation utility for Variance Analysis
+    val varianceResult = remember(totalExpectedBalance, totalWalletBalance, totalItemizedSpending, totalItemizedEarnings) {
+        LedgerCalculator.analyzeVariance(
+            expectedBalance = totalExpectedBalance,
+            walletBalance = totalWalletBalance,
+            totalSpendingBreakdown = totalItemizedSpending,
+            totalEarningsBreakdown = totalItemizedEarnings
+        )
+    }
+
+    val totalEarnings = monthlyBaseIncome + totalItemizedEarnings
+    val totalSpendings = monthlyBaseExpenses + totalItemizedSpending
+    val netProfitSurplus = totalEarnings - totalSpendings
+    
+    val totalBusinessRealizedProfit = remember(monthEntries) { monthEntries.sumOf { it.realizedProfit } }
 
     ElevatedCard(
         modifier = Modifier
@@ -2145,77 +2184,348 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                         imageVector = Icons.Default.DateRange,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onTertiaryContainer,
-                        modifier = Modifier.size(20.dp)
+                        modifier = Modifier.size(22.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "THIS MONTH",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    Column {
+                        Text(
+                            text = "MONTHLY FINANCIAL SUMMARY",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = monthName.uppercase(),
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Black,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!expanded) {
+                        Surface(
+                            color = if (netProfitSurplus >= 0) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.padding(end = 8.dp)
+                        ) {
+                            Text(
+                                text = (if (netProfitSurplus >= 0) "+" else "") + usdFormatter.format(netProfitSurplus),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = if (expanded) "Collapse" else "Expand",
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer
                     )
                 }
-                Icon(
-                    imageVector = if (expanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Collapse" else "Expand",
-                    tint = MaterialTheme.colorScheme.onTertiaryContainer
-                )
             }
 
             AnimatedVisibility(visible = expanded) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.2f))
+                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.15f))
+                    
+                    // Net Profit / Surplus Primary Banner
                     Row(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.05f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
+                        Column {
                             Text(
-                                text = "Net Profit",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                text = "Adjusted Net Profit / Surplus",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.7f)
                             )
+                            Spacer(modifier = Modifier.height(2.dp))
                             Text(
-                                text = usdFormatter.format(monthlyNetProfit),
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = if (monthlyNetProfit >= 0) Color(0xFF028A3C) else MaterialTheme.colorScheme.error,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = "Formula: Total Gross Earnings - Total Spendings",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.5f),
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                             )
                         }
-                        
-                        Column(modifier = Modifier.weight(1f).padding(end = 4.dp)) {
+                        Text(
+                            text = usdFormatter.format(netProfitSurplus),
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Black,
+                            color = if (netProfitSurplus >= 0) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    // Grid or Columns for Earnings vs. Spendings
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Earnings Card
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(
+                                    color = Color(0xFF1E7E34).copy(alpha = 0.05f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = Color(0xFF1E7E34).copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             Text(
-                                text = "Gross Income",
+                                text = "EARNINGS",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1E7E34)
+                            )
+                            
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Sales Rev:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = usdFormatter.format(monthlyBaseIncome),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Itemized:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "+${usdFormatter.format(totalItemizedEarnings)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF1E7E34)
+                                    )
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = Color(0xFF1E7E34).copy(alpha = 0.12f))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Gross:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E7E34)
+                                    )
+                                    Text(
+                                        text = usdFormatter.format(totalEarnings),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF1E7E34)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Spendings Card
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .background(
+                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.04f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f),
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "SPENDINGS",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Purchases:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = usdFormatter.format(monthlyBaseExpenses),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Itemized:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "-${usdFormatter.format(totalItemizedSpending)}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Medium,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Total Spent:",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                    Text(
+                                        text = usdFormatter.format(totalSpendings),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Variance & Business Profit Analysis Widget
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.03f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.08f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "CALCULATION UTILITY VARIANCE ANALYSIS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Business Realized Profit:",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Text(
-                                text = usdFormatter.format(monthlyIncome),
-                                style = MaterialTheme.typography.titleSmall,
+                                text = usdFormatter.format(totalBusinessRealizedProfit),
+                                style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                color = if (totalBusinessRealizedProfit >= 0) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
                             )
                         }
-                        
-                        Column(modifier = Modifier.weight(1f)) {
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
                             Text(
-                                text = "Loss",
+                                text = "Monthly Total Cash Discrepancy:",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            val discrepancyText = if (varianceResult.isSurplus) {
+                                "+" + usdFormatter.format(varianceResult.totalVariance) + " (Surplus)"
+                            } else {
+                                "-" + usdFormatter.format(varianceResult.totalVariance) + " (Deficit)"
+                            }
                             Text(
-                                text = usdFormatter.format(monthlyLoss),
-                                style = MaterialTheme.typography.titleSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.error,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
+                                text = discrepancyText,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Medium,
+                                color = if (varianceResult.isSurplus) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
                             )
+                        }
+
+                        if (varianceResult.unexplainedRemainingProfit > 0) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Unexplained Remaining Profit:",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E7E34)
+                                )
+                                Text(
+                                    text = "+" + usdFormatter.format(varianceResult.unexplainedRemainingProfit),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E7E34)
+                                )
+                            }
+                        }
+
+                        if (varianceResult.unexplainedRemainingLoss > 0) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Unexplained Remaining Loss (Leakage):",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                                Text(
+                                    text = "-" + usdFormatter.format(varianceResult.unexplainedRemainingLoss),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     }
                 }
@@ -2457,9 +2767,10 @@ fun LedgerCard(
 
             // Deficit Spending Notes (If present)
             if (entry.deficitSpendingNotes.isNotBlank()) {
-                val (baseNote, parsedFields) = remember(entry.deficitSpendingNotes) {
-                    parseDeficitSpendingNotes(entry.deficitSpendingNotes)
+                val parsedNotes = remember(entry.deficitSpendingNotes) {
+                    parseFullLedgerNotes(entry.deficitSpendingNotes)
                 }
+                val baseNote = parsedNotes.baseNote
 
                 Box(
                     modifier = Modifier
@@ -2492,32 +2803,89 @@ fun LedgerCard(
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
-                            if (parsedFields.isNotEmpty()) {
+                            if (parsedNotes.deficitFields.isNotEmpty()) {
                                 if (baseNote.isNotBlank()) {
                                     Spacer(modifier = Modifier.height(4.dp))
                                 }
                                 Text(
-                                    text = if (entry.deficit < 0) "Spending Amount Breakdown" else "Deficit Spending Breakdown",
+                                    text = "Spending Amount Breakdown",
                                     style = MaterialTheme.typography.labelSmall,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
                                 )
-                                parsedFields.forEach { (name, amt) ->
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                parsedNotes.deficitFields.forEach { item ->
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)
                                     ) {
-                                        Text(
-                                            text = "• $name",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                        Text(
-                                            text = usdFormatter.format(amt),
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "• ${item.name}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = usdFormatter.format(item.amount),
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        if (item.notes.isNotBlank()) {
+                                            Text(
+                                                text = item.notes,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                                modifier = Modifier.padding(start = 12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if (parsedNotes.earningFields.isNotEmpty()) {
+                                if (baseNote.isNotBlank() || parsedNotes.deficitFields.isNotEmpty()) {
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                }
+                                Text(
+                                    text = "Earnings Breakdown",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF1E7E34)
+                                )
+                                parsedNotes.earningFields.forEach { item ->
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "• ${item.name}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Text(
+                                                text = "+${usdFormatter.format(item.amount)}",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF1E7E34)
+                                            )
+                                        }
+                                        if (item.notes.isNotBlank()) {
+                                            Text(
+                                                text = item.notes,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                                                modifier = Modifier.padding(start = 12.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -2529,22 +2897,59 @@ fun LedgerCard(
     }
 }
 
-fun parseDeficitSpendingNotes(note: String): Pair<String, List<Pair<String, Int>>> {
-    val parts = note.split("\n\n__DEFICIT_FIELDS__:")
+data class ParsedFieldItem(
+    val name: String,
+    val amount: Int,
+    val notes: String = ""
+)
+
+data class ParsedLedgerNotes(
+    val baseNote: String,
+    val deficitFields: List<ParsedFieldItem>,
+    val earningFields: List<ParsedFieldItem>
+)
+
+fun parseFullLedgerNotes(note: String): ParsedLedgerNotes {
+    val doubleSplit = note.split("\n\n__EARNING_FIELDS__:")
+    val partOne = doubleSplit[0]
+    val serializedEarnings = doubleSplit.getOrNull(1) ?: ""
+
+    val parts = partOne.split("\n\n__DEFICIT_FIELDS__:")
     val baseNote = parts[0].trim()
-    val fields = mutableListOf<Pair<String, Int>>()
-    val serialized = parts.getOrNull(1) ?: ""
-    if (serialized.isNotBlank()) {
-        serialized.split("||").forEach { part ->
+    val serializedDeficit = parts.getOrNull(1) ?: ""
+
+    val dFields = mutableListOf<ParsedFieldItem>()
+    if (serializedDeficit.isNotBlank()) {
+        serializedDeficit.split("||").forEach { part ->
             val subparts = part.split("@@")
-            if (subparts.size == 2) {
+            if (subparts.size >= 2) {
                 val name = subparts[0].trim()
                 val amt = subparts[1].toIntOrNull() ?: 0
-                fields.add(Pair(name, amt))
+                val notes = subparts.getOrNull(2)?.trim() ?: ""
+                dFields.add(ParsedFieldItem(name, amt, notes))
             }
         }
     }
-    return Pair(baseNote, fields)
+
+    val eFields = mutableListOf<ParsedFieldItem>()
+    if (serializedEarnings.isNotBlank()) {
+        serializedEarnings.split("||").forEach { part ->
+            val subparts = part.split("@@")
+            if (subparts.size >= 2) {
+                val name = subparts[0].trim()
+                val amt = subparts[1].toIntOrNull() ?: 0
+                val notes = subparts.getOrNull(2)?.trim() ?: ""
+                eFields.add(ParsedFieldItem(name, amt, notes))
+            }
+        }
+    }
+
+    return ParsedLedgerNotes(baseNote, dFields, eFields)
+}
+
+fun parseDeficitSpendingNotes(note: String): Pair<String, List<Pair<String, Int>>> {
+    val parsed = parseFullLedgerNotes(note)
+    return Pair(parsed.baseNote, parsed.deficitFields.map { Pair(it.name, it.amount) })
 }
 
 @Composable
@@ -3125,6 +3530,7 @@ fun AddLedgerDialog(
     val isFormValid by viewModel.isFormValid.collectAsStateWithLifecycle()
     val editingEntryId by viewModel.editingEntryId.collectAsStateWithLifecycle()
     val deficitFields by viewModel.deficitFields.collectAsStateWithLifecycle()
+    val earningFields by viewModel.earningFields.collectAsStateWithLifecycle()
 
     val liveCalc by viewModel.liveCalculation.collectAsStateWithLifecycle()
     val entries by viewModel.entries.collectAsStateWithLifecycle()
@@ -3452,59 +3858,87 @@ fun AddLedgerDialog(
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
+                            Text(
+                                text = "Spending Items",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
                             deficitFields.forEachIndexed { index, field ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    OutlinedTextField(
-                                        value = field.description,
-                                        onValueChange = { viewModel.updateDeficitField(index, it, field.amount) },
-                                        label = { Text("Item Spent On") },
-                                        placeholder = { Text("e.g. Uber, Dinner") },
-                                        modifier = Modifier
-                                            .weight(1.5f)
-                                            .testTag("deficit_item_desc_$index"),
-                                        singleLine = true,
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    )
-
-                                    val isFieldAmtValid = remember(field.amount) {
-                                        field.amount.isBlank() || (field.amount.toIntOrNull()?.let { it >= 0 } ?: false)
-                                    }
-
-                                    OutlinedTextField(
-                                        value = field.amount,
-                                        onValueChange = { viewModel.updateDeficitField(index, field.description, it) },
-                                        label = { Text("Amount ($)") },
-                                        placeholder = { Text("e.g. 15") },
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .testTag("deficit_item_amt_$index"),
-                                        singleLine = true,
-                                        isError = !isFieldAmtValid,
-                                        keyboardOptions = KeyboardOptions(
-                                            keyboardType = KeyboardType.Number,
-                                            imeAction = ImeAction.Next
-                                        ),
-                                        colors = OutlinedTextFieldDefaults.colors(
-                                            focusedBorderColor = MaterialTheme.colorScheme.primary
-                                        )
-                                    )
-
-                                    IconButton(
-                                        onClick = { viewModel.removeDeficitField(index) },
-                                        modifier = Modifier.testTag("delete_deficit_item_$index")
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Delete item",
-                                            tint = MaterialTheme.colorScheme.error
+                                        OutlinedTextField(
+                                            value = field.description,
+                                            onValueChange = { viewModel.updateDeficitField(index, it, field.amount, field.notes) },
+                                            label = { Text("Item Spent On") },
+                                            placeholder = { Text("e.g. Uber, Dinner") },
+                                            modifier = Modifier
+                                                .weight(1.5f)
+                                                .testTag("deficit_item_desc_$index"),
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary
+                                            )
                                         )
+
+                                        val isFieldAmtValid = remember(field.amount) {
+                                            field.amount.isBlank() || (field.amount.toIntOrNull()?.let { it >= 0 } ?: false)
+                                        }
+
+                                        OutlinedTextField(
+                                            value = field.amount,
+                                            onValueChange = { viewModel.updateDeficitField(index, field.description, it, field.notes) },
+                                            label = { Text("Amount ($)") },
+                                            placeholder = { Text("e.g. 15") },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("deficit_item_amt_$index"),
+                                            singleLine = true,
+                                            isError = !isFieldAmtValid,
+                                            keyboardOptions = KeyboardOptions(
+                                                keyboardType = KeyboardType.Number,
+                                                imeAction = ImeAction.Next
+                                            ),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+
+                                        IconButton(
+                                            onClick = { viewModel.removeDeficitField(index) },
+                                            modifier = Modifier.testTag("delete_deficit_item_$index")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete item",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
                                     }
+
+                                    OutlinedTextField(
+                                        value = field.notes,
+                                        onValueChange = { viewModel.updateDeficitField(index, field.description, field.amount, it) },
+                                        label = { Text("Notes / Context (Optional)") },
+                                        placeholder = { Text("e.g. Personal trip, Business lunch") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("deficit_item_notes_$index"),
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                        )
+                                    )
                                 }
                             }
 
@@ -3521,16 +3955,112 @@ fun AddLedgerDialog(
                                 Text("+ Add Spending Item & Amount", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                             }
 
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f), thickness = 1.dp)
+
+                            Text(
+                                text = "Earning Items",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            earningFields.forEachIndexed { index, field ->
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = field.description,
+                                            onValueChange = { viewModel.updateEarningField(index, it, field.amount, field.notes) },
+                                            label = { Text("Source of Earnings") },
+                                            placeholder = { Text("e.g. Tips, Extra Sale") },
+                                            modifier = Modifier
+                                                .weight(1.5f)
+                                                .testTag("earning_item_desc_$index"),
+                                            singleLine = true,
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+
+                                        val isFieldAmtValid = remember(field.amount) {
+                                            field.amount.isBlank() || (field.amount.toIntOrNull()?.let { it >= 0 } ?: false)
+                                        }
+
+                                        OutlinedTextField(
+                                            value = field.amount,
+                                            onValueChange = { viewModel.updateEarningField(index, field.description, it, field.notes) },
+                                            label = { Text("Amount ($)") },
+                                            placeholder = { Text("e.g. 20") },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .testTag("earning_item_amt_$index"),
+                                            singleLine = true,
+                                            isError = !isFieldAmtValid,
+                                            keyboardOptions = KeyboardOptions(
+                                                keyboardType = KeyboardType.Number,
+                                                imeAction = ImeAction.Next
+                                            ),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = MaterialTheme.colorScheme.primary
+                                            )
+                                        )
+
+                                        IconButton(
+                                            onClick = { viewModel.removeEarningField(index) },
+                                            modifier = Modifier.testTag("delete_earning_item_$index")
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete item",
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
+
+                                    OutlinedTextField(
+                                        value = field.notes,
+                                        onValueChange = { viewModel.updateEarningField(index, field.description, field.amount, it) },
+                                        label = { Text("Notes / Context (Optional)") },
+                                        placeholder = { Text("e.g. Customer gave cash, Overtime pay") },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("earning_item_notes_$index"),
+                                        singleLine = true,
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f)
+                                        )
+                                    )
+                                }
+                            }
+
+                            Button(
+                                onClick = { viewModel.addEarningField() },
+                                modifier = Modifier
+                                    .align(Alignment.End)
+                                    .testTag("add_earning_field_button"),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            ) {
+                                Text("+ Add Earning Item & Amount", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                            }
+
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant, thickness = 1.dp)
 
                             val isSurplus = liveCalc.deficit < 0
                             val totalVariance = if (isSurplus) abs(liveCalc.deficit) else liveCalc.deficit
                             val explainedSum = deficitFields.sumOf { it.amount.toIntOrNull() ?: 0 }
-                            val remainingVal = if (isSurplus) {
-                                totalVariance - explainedSum
-                            } else {
-                                liveCalc.ledgerLoss
-                            }
+                            val earningSum = earningFields.sumOf { it.amount.toIntOrNull() ?: 0 }
+                            val remainingVal = totalVariance - explainedSum + earningSum
 
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
@@ -3551,8 +4081,15 @@ fun AddLedgerDialog(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(if (isSurplus) "Total Spending Breakdown:" else "Total Explained Breakdown:", style = MaterialTheme.typography.bodyMedium)
+                                    Text("Total Spending Breakdown:", style = MaterialTheme.typography.bodyMedium)
                                     Text("$${explainedSum}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("Total Earnings Breakdown:", style = MaterialTheme.typography.bodyMedium)
+                                    Text("+$${earningSum}", fontWeight = FontWeight.Bold, color = Color(0xFF1E7E34))
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
@@ -3825,15 +4362,16 @@ fun MathDataRow(
 }
 
 @Composable
-fun TransactionMetricsPanel(transactions: List<FinancialTransaction>) {
+fun TransactionMetricsPanel(transactions: List<FinancialTransaction>, viewModel: LedgerViewModel) {
     val usdFormatter = remember { NumberFormat.getCurrencyInstance(Locale.US) }
+    val customIncList by viewModel.customIncomeCategories.collectAsStateWithLifecycle()
     
-    val totalIncome = transactions.filter { it.category == "Income" }.sumOf { it.amount }
-    val totalExpenses = transactions.filter { it.category != "Income" }.sumOf { it.amount }
+    val totalIncome = transactions.filter { it.category == "Income" || customIncList.contains(it.category) }.sumOf { it.amount }
+    val totalExpenses = transactions.filter { it.category != "Income" && !customIncList.contains(it.category) }.sumOf { it.amount }
     val netBalance = totalIncome - totalExpenses
     
     val count = transactions.size
-    val categories = transactions.filter { it.category != "Income" }.groupBy { it.category }.mapValues { (_, txs) -> txs.sumOf { it.amount } }
+    val categories = transactions.filter { it.category != "Income" && !customIncList.contains(it.category) }.groupBy { it.category }.mapValues { (_, txs) -> txs.sumOf { it.amount } }
     val topExpenseCategory = categories.maxByOrNull { it.value }?.key ?: "None"
     
     Card(
@@ -4182,8 +4720,11 @@ fun AddTransactionDialog(
             }
         }
     }
+
+    val customIncList by viewModel.customIncomeCategories.collectAsStateWithLifecycle()
+    val customExpList by viewModel.customExpenseCategories.collectAsStateWithLifecycle()
     
-    val categories = listOf(
+    val baseCategories = listOf(
         "Income",
         "Food & Dining",
         "Shopping",
@@ -4193,6 +4734,9 @@ fun AddTransactionDialog(
         "Healthcare",
         "Other"
     )
+    val categories = remember(customIncList, customExpList) {
+        baseCategories + customIncList + customExpList
+    }
     
     Dialog(
         onDismissRequest = onDismiss,
@@ -4393,12 +4937,94 @@ fun AddTransactionDialog(
                         )
                     )
                     
-                    Text(
-                        text = "3. Select Category",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "3. Select Category",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        
+                        var showAddCategoryDialog by remember { mutableStateOf(false) }
+                        TextButton(
+                            onClick = { showAddCategoryDialog = true },
+                            modifier = Modifier.testTag("dialog_add_custom_category_button")
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(text = "(+) Add/Include", style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        if (showAddCategoryDialog) {
+                            var newCatName by remember { mutableStateOf("") }
+                            var catTypeIsIncome by remember { mutableStateOf(false) } // Default to expense
+                            AlertDialog(
+                                onDismissRequest = { showAddCategoryDialog = false },
+                                title = { Text("Include Custom Category") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        Text(
+                                            text = "Enter a name and specify if this represents an Income or Expense category.",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                        OutlinedTextField(
+                                            value = newCatName,
+                                            onValueChange = { newCatName = it },
+                                            label = { Text("Category Name") },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            singleLine = true
+                                        )
+                                        
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = !catTypeIsIncome,
+                                                    onClick = { catTypeIsIncome = false }
+                                                )
+                                                Text("Expense", style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                RadioButton(
+                                                    selected = catTypeIsIncome,
+                                                    onClick = { catTypeIsIncome = true }
+                                                )
+                                                Text("Income", style = MaterialTheme.typography.bodyMedium)
+                                            }
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            if (newCatName.isNotBlank()) {
+                                                if (catTypeIsIncome) {
+                                                    viewModel.addCustomIncomeCategory(newCatName)
+                                                } else {
+                                                    viewModel.addCustomExpenseCategory(newCatName)
+                                                }
+                                                viewModel.txCategoryText.value = newCatName.trim()
+                                            }
+                                            showAddCategoryDialog = false
+                                        }
+                                    ) {
+                                        Text("Add")
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showAddCategoryDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+                    }
                     
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -5583,20 +6209,30 @@ fun LedgerDetailScreen(
                     fontWeight = FontWeight.Bold
                 )
 
+                val parsedNotesForDetail = remember(entry.deficitSpendingNotes) {
+                    parseFullLedgerNotes(entry.deficitSpendingNotes)
+                }
+                var totalSpending = 0
+                parsedNotesForDetail.deficitFields.forEach { totalSpending += it.amount }
+                var totalEarnings = 0
+                parsedNotesForDetail.earningFields.forEach { totalEarnings += it.amount }
+                val unexplainedProfitOrLoss = abs(entry.deficit) - totalSpending + totalEarnings
+
                 DetailMetricRow(
-                    label = if (hasSavings) "Total Spending Breakdown" else "Declared Deficit Limit",
-                    value = usdFormatter.format(entry.declaredDeficit)
+                    label = "Total Spending Breakdown",
+                    value = usdFormatter.format(totalSpending)
                 )
 
-                val unexplainedProfitOrLoss = if (hasSavings) {
-                    abs(entry.deficit) - entry.declaredDeficit
-                } else {
-                    entry.ledgerLoss
-                }
                 DetailMetricRow(
-                    label = if (hasSavings) "Unexplained Remaining (Profit)" else "Capitalized Net Loss",
+                    label = "Total Earnings Breakdown",
+                    value = "+${usdFormatter.format(totalEarnings)}",
+                    valueColor = Color(0xFF1E7E34)
+                )
+
+                DetailMetricRow(
+                    label = if (hasSavings) "Unexplained Remaining (Profit)" else "Unexplained Remaining (Loss)",
                     value = (if (hasSavings && unexplainedProfitOrLoss >= 0) "+" else "") + usdFormatter.format(unexplainedProfitOrLoss),
-                    valueColor = if (hasSavings && unexplainedProfitOrLoss >= 0) Color(0xFF1E7E34) else if (!hasSavings && unexplainedProfitOrLoss > 0) Color(0xFFC01F37) else MaterialTheme.colorScheme.onSurface
+                    valueColor = if (hasSavings && unexplainedProfitOrLoss >= 0) Color(0xFF1E7E34) else if (unexplainedProfitOrLoss > 0) Color(0xFFC01F37) else MaterialTheme.colorScheme.onSurface
                 )
 
                 val isPositive = entry.realizedProfit > 0
@@ -5609,11 +6245,9 @@ fun LedgerDetailScreen(
 
                 Text(
                     text = if (hasSavings) {
-                        val cashSurplusAmt = abs(entry.deficit)
-                        val unexplainedProfit = cashSurplusAmt - entry.declaredDeficit
-                        "Variance Formula: Total Variance (Cash Surplus): ${usdFormatter.format(cashSurplusAmt)} - Total Spending Breakdown: ${usdFormatter.format(entry.declaredDeficit)} = Unexplained Remaining (Profit) (${usdFormatter.format(unexplainedProfit)})"
+                        "Variance Formula: Total Variance (Cash Surplus): ${usdFormatter.format(abs(entry.deficit))} - Total Spending Breakdown: ${usdFormatter.format(totalSpending)} + Total Earnings Breakdown: ${usdFormatter.format(totalEarnings)} = Unexplained Remaining (Profit) (${usdFormatter.format(unexplainedProfitOrLoss)})"
                     } else {
-                        "Variance Formula: Expected Cash (${usdFormatter.format(entry.expectedBalance)}) - Actual Wallet cash (${usdFormatter.format(entry.walletBalance)}) = Deficit (${usdFormatter.format(entry.deficit)})"
+                        "Variance Formula: Total Variance (Deficit): ${usdFormatter.format(abs(entry.deficit))} - Total Spending Breakdown: ${usdFormatter.format(totalSpending)} + Total Earnings Breakdown: ${usdFormatter.format(totalEarnings)} = Unexplained Remaining (Loss) (${usdFormatter.format(unexplainedProfitOrLoss)})"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     fontSize = 11.sp,
@@ -5623,9 +6257,10 @@ fun LedgerDetailScreen(
 
             // Section 4: Operational Deficit Notes
             if (entry.deficitSpendingNotes.isNotBlank()) {
-                val (baseNote, parsedFields) = remember(entry.deficitSpendingNotes) {
-                    parseDeficitSpendingNotes(entry.deficitSpendingNotes)
+                val parsedNotes = remember(entry.deficitSpendingNotes) {
+                    parseFullLedgerNotes(entry.deficitSpendingNotes)
                 }
+                val baseNote = parsedNotes.baseNote
 
                 Column(
                     modifier = Modifier
@@ -5659,7 +6294,7 @@ fun LedgerDetailScreen(
                         )
                     }
 
-                    if (parsedFields.isNotEmpty()) {
+                    if (parsedNotes.deficitFields.isNotEmpty()) {
                         if (baseNote.isNotBlank()) {
                             HorizontalDivider(
                                 color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
@@ -5668,28 +6303,85 @@ fun LedgerDetailScreen(
                             )
                         }
                         Text(
-                            text = "Declared Deficit Itemized Breakdown:",
+                            text = "Spending Itemized Breakdown:",
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
-                        parsedFields.forEach { (name, amt) ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "• $name",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Text(
-                                    text = usdFormatter.format(amt),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
+                        parsedNotes.deficitFields.forEach { item ->
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "• ${item.name}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = usdFormatter.format(item.amount),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                if (item.notes.isNotBlank()) {
+                                    Text(
+                                        text = item.notes,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                        modifier = Modifier.padding(start = 12.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    if (parsedNotes.earningFields.isNotEmpty()) {
+                        if (baseNote.isNotBlank() || parsedNotes.deficitFields.isNotEmpty()) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
+                                thickness = 1.dp,
+                                modifier = Modifier.padding(vertical = 4.dp)
+                            )
+                        }
+                        Text(
+                            text = "Earnings Itemized Breakdown:",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1E7E34)
+                        )
+                        parsedNotes.earningFields.forEach { item ->
+                            Column(modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "• ${item.name}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = "+${usdFormatter.format(item.amount)}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = Color(0xFF1E7E34)
+                                    )
+                                }
+                                if (item.notes.isNotBlank()) {
+                                    Text(
+                                        text = item.notes,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                        modifier = Modifier.padding(start = 12.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -5796,8 +6488,10 @@ fun SortableHeader(
 fun SortableTransactionTable(
     transactions: List<FinancialTransaction>,
     onEdit: (FinancialTransaction) -> Unit,
-    onDelete: (Int) -> Unit
+    onDelete: (Int) -> Unit,
+    viewModel: LedgerViewModel
 ) {
+    val customIncList by viewModel.customIncomeCategories.collectAsStateWithLifecycle()
     var sortColumn by remember { mutableStateOf(SortColumn.DATE) }
     var sortAscending by remember { mutableStateOf(false) }
     var selectedTxForAction by remember { mutableStateOf<FinancialTransaction?>(null) }
@@ -5965,11 +6659,12 @@ fun SortableTransactionTable(
                         )
                     }
                     Column(modifier = Modifier.weight(1.5f)) {
+                        val isInc = tx.category == "Income" || customIncList.contains(tx.category)
                         Text(
                             text = usdFormatter.format(tx.amount),
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (tx.category == "Income") Color(0xFF00833E) else MaterialTheme.colorScheme.onSurface
+                            color = if (isInc) Color(0xFF00833E) else MaterialTheme.colorScheme.onSurface
                         )
                     }
                     Row(
@@ -6102,8 +6797,18 @@ fun IncomeExpenseForm(
     val editingTxId by viewModel.editingTxId.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    val incomeCategories = listOf("Income", "Investments", "Gifts", "Other Income")
-    val expenseCategories = listOf("Food & Dining", "Shopping", "Travel & Transit", "Entertainment", "Rent & Bills", "Healthcare", "Other")
+    val customIncList by viewModel.customIncomeCategories.collectAsStateWithLifecycle()
+    val customExpList by viewModel.customExpenseCategories.collectAsStateWithLifecycle()
+    
+    val baseIncomeCategories = listOf("Income", "Investments", "Gifts", "Other Income")
+    val baseExpenseCategories = listOf("Food & Dining", "Shopping", "Travel & Transit", "Entertainment", "Rent & Bills", "Healthcare", "Other")
+
+    val incomeCategories = remember(customIncList) {
+        baseIncomeCategories + customIncList
+    }
+    val expenseCategories = remember(customExpList) {
+        baseExpenseCategories + customExpList
+    }
 
     val isIncomeMode = remember(txCat) {
         txCat in incomeCategories
@@ -6316,12 +7021,73 @@ fun IncomeExpenseForm(
             }
 
             // Categories Selection Header
-            Text(
-                text = "Select Category",
-                style = MaterialTheme.typography.labelMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Select Category",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                
+                var showAddCategoryDialog by remember { mutableStateOf(false) }
+                TextButton(
+                    onClick = { showAddCategoryDialog = true },
+                    modifier = Modifier.testTag("add_custom_category_button")
+                ) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(text = "(+) Add/Include", style = MaterialTheme.typography.labelMedium)
+                }
+
+                if (showAddCategoryDialog) {
+                    var newCatName by remember { mutableStateOf("") }
+                    AlertDialog(
+                        onDismissRequest = { showAddCategoryDialog = false },
+                        title = { Text("Include Custom Category") },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text(
+                                    text = "Create a custom category for the current ${if (isIncomeMode) "Income" else "Expense"} type.",
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                OutlinedTextField(
+                                    value = newCatName,
+                                    onValueChange = { newCatName = it },
+                                    label = { Text("Category Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    if (newCatName.isNotBlank()) {
+                                        if (isIncomeMode) {
+                                            viewModel.addCustomIncomeCategory(newCatName)
+                                        } else {
+                                            viewModel.addCustomExpenseCategory(newCatName)
+                                        }
+                                        viewModel.txCategoryText.value = newCatName.trim()
+                                    }
+                                    showAddCategoryDialog = false
+                                }
+                            ) {
+                                Text("Add")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showAddCategoryDialog = false }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+            }
 
             // Category Chips Selection Flow
             val activeCategories = if (isIncomeMode) incomeCategories else expenseCategories
@@ -6468,7 +7234,7 @@ fun IncomeExpenseLedgerView(
         }
 
         item {
-            TransactionMetricsPanel(transactions = filtered)
+            TransactionMetricsPanel(transactions = filtered, viewModel = viewModel)
         }
 
         if (transactions.isNotEmpty()) {
@@ -6507,7 +7273,11 @@ fun IncomeExpenseLedgerView(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val filterCategories = listOf("All", "Income", "Food & Dining", "Shopping", "Entertainment", "Rent & Bills", "Healthcare", "Other")
+                    val customIncList by viewModel.customIncomeCategories.collectAsStateWithLifecycle()
+                    val customExpList by viewModel.customExpenseCategories.collectAsStateWithLifecycle()
+                    val filterCategories = remember(customIncList, customExpList) {
+                        listOf("All", "Income", "Food & Dining", "Shopping", "Entertainment", "Rent & Bills", "Healthcare", "Other") + customIncList + customExpList
+                    }
                     
                     Box(modifier = Modifier.weight(1f)) {
                         var expanded by remember { mutableStateOf(false) }
@@ -6627,7 +7397,8 @@ fun IncomeExpenseLedgerView(
                         SortableTransactionTable(
                             transactions = filtered,
                             onEdit = { viewModel.startEditingTransaction(it) },
-                            onDelete = { viewModel.deleteTransaction(it) }
+                            onDelete = { viewModel.deleteTransaction(it) },
+                            viewModel = viewModel
                         )
                     }
                 }

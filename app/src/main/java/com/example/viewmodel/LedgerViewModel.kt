@@ -34,6 +34,29 @@ class LedgerViewModel(
     val txCategoryText = MutableStateFlow("Expense") // default category
     val editingTxId = MutableStateFlow<Int?>(null)
     
+    val customIncomeCategories = MutableStateFlow<List<String>>(emptyList())
+    val customExpenseCategories = MutableStateFlow<List<String>>(emptyList())
+
+    fun addCustomIncomeCategory(category: String) {
+        val current = customIncomeCategories.value.toMutableList()
+        val cleaned = category.trim().replace("|", "").replace("@", "")
+        if (cleaned.isNotBlank() && !current.contains(cleaned)) {
+            current.add(cleaned)
+            customIncomeCategories.value = current
+            prefs.edit().putString("custom_income_categories", current.joinToString("||")).apply()
+        }
+    }
+
+    fun addCustomExpenseCategory(category: String) {
+        val current = customExpenseCategories.value.toMutableList()
+        val cleaned = category.trim().replace("|", "").replace("@", "")
+        if (cleaned.isNotBlank() && !current.contains(cleaned)) {
+            current.add(cleaned)
+            customExpenseCategories.value = current
+            prefs.edit().putString("custom_expense_categories", current.joinToString("||")).apply()
+        }
+    }
+    
     // Ledger Timestamp option
     val ledgerTimestampText = MutableStateFlow("")
 
@@ -46,6 +69,7 @@ class LedgerViewModel(
     val declaredDeficitText = MutableStateFlow("")
     val editingEntryId = MutableStateFlow<Int?>(null)
     val deficitFields = MutableStateFlow<List<DeficitField>>(emptyList())
+    val earningFields = MutableStateFlow<List<EarningField>>(emptyList())
 
     val isLoading = MutableStateFlow(true)
 
@@ -99,14 +123,39 @@ class LedgerViewModel(
         if (!savedFields.isNullOrBlank()) {
             deficitFields.value = savedFields.split("||").mapNotNull { part ->
                 val subparts = part.split("@@")
-                if (subparts.size == 2) {
-                    DeficitField(subparts[0], subparts[1])
+                if (subparts.size >= 2) {
+                    DeficitField(subparts[0], subparts[1], subparts.getOrNull(2) ?: "")
                 } else null
             }
         } else {
             deficitFields.value = emptyList()
         }
+
+        val savedEarningFields = prefs.getString("draft_earning_fields", null)
+        if (!savedEarningFields.isNullOrBlank()) {
+            earningFields.value = savedEarningFields.split("||").mapNotNull { part ->
+                val subparts = part.split("@@")
+                if (subparts.size >= 2) {
+                    EarningField(subparts[0], subparts[1], subparts.getOrNull(2) ?: "")
+                } else null
+            }
+        } else {
+            earningFields.value = emptyList()
+        }
         
+        val customInc = prefs.getString("custom_income_categories", null)
+        if (!customInc.isNullOrBlank()) {
+            customIncomeCategories.value = customInc.split("||").filter { it.isNotBlank() }
+        } else {
+            customIncomeCategories.value = emptyList()
+        }
+        val customExp = prefs.getString("custom_expense_categories", null)
+        if (!customExp.isNullOrBlank()) {
+            customExpenseCategories.value = customExp.split("||").filter { it.isNotBlank() }
+        } else {
+            customExpenseCategories.value = emptyList()
+        }
+
         val nowStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
         ledgerTimestampText.value = prefs.getString("draft_ledger_timestamp", nowStr) ?: nowStr
     }
@@ -192,8 +241,16 @@ class LedgerViewModel(
         viewModelScope.launch {
             deficitFields.collect { fields ->
                 draftSyncStatus.value = "Syncing..."
-                val serialized = fields.joinToString("||") { "${it.description}@@${it.amount}" }
+                val serialized = fields.joinToString("||") { "${it.description}@@${it.amount}@@${it.notes}" }
                 prefs.edit().putString("draft_deficit_fields", serialized).apply()
+                draftSyncStatus.value = "Draft Synced"
+            }
+        }
+        viewModelScope.launch {
+            earningFields.collect { fields ->
+                draftSyncStatus.value = "Syncing..."
+                val serialized = fields.joinToString("||") { "${it.description}@@${it.amount}@@${it.notes}" }
+                prefs.edit().putString("draft_earning_fields", serialized).apply()
                 draftSyncStatus.value = "Draft Synced"
             }
         }
@@ -483,11 +540,21 @@ class LedgerViewModel(
         val fields = deficitFields.value
         val dDef = fields.sumOf { it.amount.toIntOrNull() ?: 0 }
         val baseNotes = deficitSpendingNotesText.value
-        val serializedFields = fields.joinToString("||") { "${it.description.replace("|", "").replace("@", "")}@@${it.amount}" }
-        val notes = if (fields.isNotEmpty()) {
-            "$baseNotes\n\n__DEFICIT_FIELDS__:$serializedFields"
-        } else {
-            baseNotes
+        val serializedFields = fields.joinToString("||") { 
+            "${it.description.replace("|", "").replace("@", "")}@@${it.amount}@@${it.notes.replace("|", "").replace("@", "")}" 
+        }
+        
+        val earns = earningFields.value
+        val serializedEarnings = earns.joinToString("||") { 
+            "${it.description.replace("|", "").replace("@", "")}@@${it.amount}@@${it.notes.replace("|", "").replace("@", "")}" 
+        }
+        
+        var notes = baseNotes
+        if (fields.isNotEmpty()) {
+            notes += "\n\n__DEFICIT_FIELDS__:$serializedFields"
+        }
+        if (earns.isNotEmpty()) {
+            notes += "\n\n__EARNING_FIELDS__:$serializedEarnings"
         }
 
         val calc = LedgerCalculator.calculate(pPts, aPts, pBal, wBal, dDef)
@@ -535,23 +602,39 @@ class LedgerViewModel(
         previousBalanceText.value = entry.previousBalance.toString()
         walletBalanceText.value = entry.walletBalance.toString()
         
-        val parts = entry.deficitSpendingNotes.split("\n\n__DEFICIT_FIELDS__:")
+        val doubleSplit = entry.deficitSpendingNotes.split("\n\n__EARNING_FIELDS__:")
+        val partOne = doubleSplit[0]
+        val serializedEarnings = doubleSplit.getOrNull(1) ?: ""
+        
+        val parts = partOne.split("\n\n__DEFICIT_FIELDS__:")
         deficitSpendingNotesText.value = parts[0]
         val serialized = parts.getOrNull(1) ?: ""
         if (serialized.isNotBlank()) {
             deficitFields.value = serialized.split("||").mapNotNull { part ->
                 val subparts = part.split("@@")
-                if (subparts.size == 2) {
-                    DeficitField(subparts[0], subparts[1])
+                if (subparts.size >= 2) {
+                    DeficitField(subparts[0], subparts[1], subparts.getOrNull(2) ?: "")
                 } else null
             }
         } else {
             if (entry.declaredDeficit > 0) {
-                deficitFields.value = listOf(DeficitField("Unspecified Deficit", entry.declaredDeficit.toString()))
+                deficitFields.value = listOf(DeficitField("Unspecified Deficit", entry.declaredDeficit.toString(), ""))
             } else {
                 deficitFields.value = emptyList()
             }
         }
+        
+        if (serializedEarnings.isNotBlank()) {
+            earningFields.value = serializedEarnings.split("||").mapNotNull { part ->
+                val subparts = part.split("@@")
+                if (subparts.size >= 2) {
+                    EarningField(subparts[0], subparts[1], subparts.getOrNull(2) ?: "")
+                } else null
+            }
+        } else {
+            earningFields.value = emptyList()
+        }
+        
         declaredDeficitText.value = entry.declaredDeficit.toString()
         
         val recordDateStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(entry.timestamp))
@@ -590,6 +673,7 @@ class LedgerViewModel(
         deficitSpendingNotesText.value = ""
         declaredDeficitText.value = ""
         deficitFields.value = emptyList()
+        earningFields.value = emptyList()
         
         val nowStr = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date())
         ledgerTimestampText.value = nowStr
@@ -670,18 +754,47 @@ class LedgerViewModel(
         }
     }
 
-    fun updateDeficitField(index: Int, description: String, amount: String) {
+    fun updateDeficitField(index: Int, description: String, amount: String, notes: String = "") {
         val current = deficitFields.value.toMutableList()
         if (index in current.indices) {
-            current[index] = DeficitField(description, amount)
+            current[index] = DeficitField(description, amount, notes)
             deficitFields.value = current
+        }
+    }
+
+    fun addEarningField() {
+        val current = earningFields.value.toMutableList()
+        current.add(EarningField("", "", ""))
+        earningFields.value = current
+    }
+
+    fun removeEarningField(index: Int) {
+        val current = earningFields.value.toMutableList()
+        if (index in current.indices) {
+            current.removeAt(index)
+            earningFields.value = current
+        }
+    }
+
+    fun updateEarningField(index: Int, description: String, amount: String, notes: String = "") {
+        val current = earningFields.value.toMutableList()
+        if (index in current.indices) {
+            current[index] = EarningField(description, amount, notes)
+            earningFields.value = current
         }
     }
 }
 
 data class DeficitField(
     val description: String = "",
-    val amount: String = ""
+    val amount: String = "",
+    val notes: String = ""
+)
+
+data class EarningField(
+    val description: String = "",
+    val amount: String = "",
+    val notes: String = ""
 )
 
 class LedgerViewModelFactory(

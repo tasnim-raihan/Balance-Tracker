@@ -37,13 +37,14 @@ object LedgerCalculator {
     fun analyzeVariance(
         expectedBalance: Int,
         walletBalance: Int,
-        totalSpendingBreakdown: Int
+        totalSpendingBreakdown: Int,
+        totalEarningsBreakdown: Int = 0
     ): VarianceAnalysisResult {
         val deficit = expectedBalance - walletBalance
         val isSurplus = deficit < 0
         val totalVariance = if (isSurplus) abs(deficit) else deficit
-        val unexplainedRemainingProfit = if (isSurplus) totalVariance - totalSpendingBreakdown else 0
-        val unexplainedRemainingLoss = if (!isSurplus) deficit - totalSpendingBreakdown else 0
+        val unexplainedRemainingProfit = if (isSurplus) totalVariance - totalSpendingBreakdown + totalEarningsBreakdown else 0
+        val unexplainedRemainingLoss = if (!isSurplus) deficit - totalSpendingBreakdown + totalEarningsBreakdown else 0
 
         return VarianceAnalysisResult(
             isSurplus = isSurplus,
