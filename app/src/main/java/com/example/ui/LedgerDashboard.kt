@@ -2295,33 +2295,41 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "Sales Rev:",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = usdFormatter.format(monthlyBaseIncome),
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.End
                                     )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "Itemized:",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "+${usdFormatter.format(totalItemizedEarnings)}",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Medium,
-                                        color = Color(0xFF1E7E34)
+                                        color = Color(0xFF1E7E34),
+                                        textAlign = TextAlign.End
                                     )
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = Color(0xFF1E7E34).copy(alpha = 0.12f))
@@ -2334,13 +2342,16 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                         text = "Gross:",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF1E7E34)
+                                        color = Color(0xFF1E7E34),
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = usdFormatter.format(totalEarnings),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = Color(0xFF1E7E34)
+                                        color = Color(0xFF1E7E34),
+                                        textAlign = TextAlign.End
                                     )
                                 }
                             }
@@ -2372,33 +2383,41 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "Purchases:",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = usdFormatter.format(monthlyBaseExpenses),
                                         style = MaterialTheme.typography.bodySmall,
-                                        fontWeight = FontWeight.Medium
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.End
                                     )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Text(
                                         text = "Itemized:",
                                         style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = "-${usdFormatter.format(totalItemizedSpending)}",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Medium,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.End
                                     )
                                 }
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.error.copy(alpha = 0.12f))
@@ -2411,13 +2430,16 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                         text = "Total Spent:",
                                         style = MaterialTheme.typography.bodySmall,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.weight(1f)
                                     )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = usdFormatter.format(totalSpendings),
                                         style = MaterialTheme.typography.bodyMedium,
                                         fontWeight = FontWeight.ExtraBold,
-                                        color = MaterialTheme.colorScheme.error
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.End
                                     )
                                 }
                             }
@@ -2449,30 +2471,37 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                         
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = "Business Realized Profit:",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = usdFormatter.format(totalBusinessRealizedProfit),
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Bold,
-                                color = if (totalBusinessRealizedProfit >= 0) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
+                                color = if (totalBusinessRealizedProfit >= 0) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.End
                             )
                         }
 
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
                                 text = "Monthly Total Cash Discrepancy:",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
                             )
+                            Spacer(modifier = Modifier.width(8.dp))
                             val discrepancyText = if (varianceResult.isSurplus) {
                                 "+" + usdFormatter.format(varianceResult.totalVariance) + " (Surplus)"
                             } else {
@@ -2482,7 +2511,8 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                 text = discrepancyText,
                                 style = MaterialTheme.typography.bodySmall,
                                 fontWeight = FontWeight.Medium,
-                                color = if (varianceResult.isSurplus) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
+                                color = if (varianceResult.isSurplus) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.End
                             )
                         }
 
@@ -2496,13 +2526,16 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                     text = "Unexplained Remaining Profit:",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E7E34)
+                                    color = Color(0xFF1E7E34),
+                                    modifier = Modifier.weight(1f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "+" + usdFormatter.format(varianceResult.unexplainedRemainingProfit),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF1E7E34)
+                                    color = Color(0xFF1E7E34),
+                                    textAlign = TextAlign.End
                                 )
                             }
                         }
@@ -2517,13 +2550,16 @@ fun MonthlySummaryWidget(entries: List<LedgerEntry>) {
                                     text = "Unexplained Remaining Loss (Leakage):",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.weight(1f)
                                 )
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = "-" + usdFormatter.format(varianceResult.unexplainedRemainingLoss),
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.error
+                                    color = MaterialTheme.colorScheme.error,
+                                    textAlign = TextAlign.End
                                 )
                             }
                         }
@@ -3063,7 +3099,8 @@ fun HighlightDeficitRow(deficit: Int, usdFormatter: NumberFormat) {
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.weight(1f)
         ) {
             Icon(
                 imageVector = icon,
@@ -3075,14 +3112,20 @@ fun HighlightDeficitRow(deficit: Int, usdFormatter: NumberFormat) {
                 text = label,
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = FontWeight.Bold,
-                color = textColor
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
+        Spacer(modifier = Modifier.width(8.dp))
         Text(
             text = (if (deficit < 0) "+" else "") + usdFormatter.format(abs(deficit)),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Black,
-            color = textColor
+            color = textColor,
+            textAlign = TextAlign.End,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -4082,39 +4125,79 @@ fun AddLedgerDialog(
                             ) {
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(if (isSurplus) "Total Variance (Cash Surplus):" else "Total Variance (Deficit):", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = if (isSurplus) "Total Variance (Cash Surplus):" else "Total Variance (Deficit):",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = if (isSurplus) "+$$totalVariance" else "-$$totalVariance",
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSurplus) Color(0xFF1E7E34) else if (totalVariance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                        color = if (isSurplus) Color(0xFF1E7E34) else if (totalVariance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1
                                     )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Total Spending Breakdown:", style = MaterialTheme.typography.bodyMedium)
-                                    Text("$${explainedSum}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    Text(
+                                        text = "Total Spending Breakdown:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "$${explainedSum}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1
+                                    )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text("Total Earnings Breakdown:", style = MaterialTheme.typography.bodyMedium)
-                                    Text("+$${earningSum}", fontWeight = FontWeight.Bold, color = Color(0xFF1E7E34))
+                                    Text(
+                                        text = "Total Earnings Breakdown:",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "+$${earningSum}",
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF1E7E34),
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1
+                                    )
                                 }
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     val isRemainingProfit = remainingVal >= 0
-                                    Text(if (isRemainingProfit) "Unexplained Remaining (Profit):" else "Unexplained Remaining (Loss):", style = MaterialTheme.typography.bodyMedium)
+                                    Text(
+                                        text = if (isRemainingProfit) "Unexplained Remaining (Profit):" else "Unexplained Remaining (Loss):",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                     Text(
                                         text = if (isRemainingProfit) "+$$remainingVal" else "-$$${abs(remainingVal)}",
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isRemainingProfit) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
+                                        color = if (isRemainingProfit) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.End,
+                                        maxLines = 1
                                     )
                                 }
                             }
