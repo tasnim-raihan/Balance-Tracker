@@ -452,30 +452,48 @@ class LedgerViewModel(
             initialValue = emptyList()
         )
 
+data class LiveCalculationInputs(
+    val prevPts: Int,
+    val availPts: Int,
+    val prevBal: Int,
+    val wallBal: Int,
+    val decDef: Int
+)
+
     // Derived real-time calculations
-    val liveCalculation: StateFlow<LedgerCalculator.CalculationResult> = combine(
+    private val stringCalculationsFlow = combine(
         previousPointsText,
         availablePointsText,
         previousBalanceText,
         walletBalanceText,
         declaredDeficitText
     ) { prevPts, availPts, prevBal, wallBal, decDef ->
-        val pPts = prevPts.toIntOrNull() ?: 0
-        val aPts = availPts.toIntOrNull() ?: 0
-        val pBal = prevBal.toIntOrNull() ?: 0
-        val wBal = wallBal.toIntOrNull() ?: 0
-        val dDef = decDef.toIntOrNull() ?: 0
+        LiveCalculationInputs(
+            prevPts.toIntOrNull() ?: 0,
+            availPts.toIntOrNull() ?: 0,
+            prevBal.toIntOrNull() ?: 0,
+            wallBal.toIntOrNull() ?: 0,
+            decDef.toIntOrNull() ?: 0
+        )
+    }
+
+    val liveCalculation: StateFlow<LedgerCalculator.CalculationResult> = combine(
+        stringCalculationsFlow,
+        earningFields
+    ) { inputs, earnsList ->
+        val eEarns = earnsList.sumOf { it.amount.toIntOrNull() ?: 0 }
         LedgerCalculator.calculate(
-            previousPoints = pPts,
-            availablePoints = aPts,
-            previousBalance = pBal,
-            walletBalance = wBal,
-            declaredDeficit = dDef
+            previousPoints = inputs.prevPts,
+            availablePoints = inputs.availPts,
+            previousBalance = inputs.prevBal,
+            walletBalance = inputs.wallBal,
+            declaredDeficit = inputs.decDef,
+            totalEarningsBreakdown = eEarns
         )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = LedgerCalculator.calculate(0, 0, 0, 0, 0)
+        initialValue = LedgerCalculator.calculate(0, 0, 0, 0, 0, 0)
     )
 
     /**
@@ -557,7 +575,8 @@ class LedgerViewModel(
             notes += "\n\n__EARNING_FIELDS__:$serializedEarnings"
         }
 
-        val calc = LedgerCalculator.calculate(pPts, aPts, pBal, wBal, dDef)
+        val eEarns = earns.sumOf { it.amount.toIntOrNull() ?: 0 }
+        val calc = LedgerCalculator.calculate(pPts, aPts, pBal, wBal, dDef, eEarns)
         val editId = editingEntryId.value
         val originalTimestamp = if (editId != null) {
             entries.value.find { it.id == editId }?.timestamp ?: System.currentTimeMillis()

@@ -2753,14 +2753,27 @@ fun LedgerCard(
             // Deficit Highlight Row
             HighlightDeficitRow(entry.deficit, usdFormatter)
 
-            val isSurplus = entry.deficit < 0
-            val unexplainedRemaining = if (isSurplus) {
-                abs(entry.deficit) - entry.declaredDeficit
-            } else {
-                entry.ledgerLoss
+            val parsedNotes = remember(entry.deficitSpendingNotes) {
+                parseFullLedgerNotes(entry.deficitSpendingNotes)
             }
+            val totalSpending = remember(parsedNotes) {
+                parsedNotes.deficitFields.sumOf { it.amount }
+            }
+            val totalEarnings = remember(parsedNotes) {
+                parsedNotes.earningFields.sumOf { it.amount }
+            }
+            val isSurplus = entry.deficit < 0
+            val signedVariance = if (isSurplus) abs(entry.deficit) else -abs(entry.deficit)
+            val unexplainedRemaining = signedVariance - totalSpending + totalEarnings
+
             if (unexplainedRemaining != 0) {
-                HighlightLossRow(unexplainedRemaining, entry.declaredDeficit, usdFormatter, entry.deficit)
+                HighlightLossRow(
+                    loss = unexplainedRemaining,
+                    declaredDeficit = totalSpending,
+                    usdFormatter = usdFormatter,
+                    deficit = entry.deficit,
+                    totalEarnings = totalEarnings
+                )
             }
 
             HighlightProfitRow(entry.realizedProfit, entry.transactionType, usdFormatter)
@@ -3075,10 +3088,10 @@ fun HighlightDeficitRow(deficit: Int, usdFormatter: NumberFormat) {
 }
 
 @Composable
-fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat, deficit: Int = 0) {
-    val isSurplus = deficit < 0
-    val backgroundColor = if (isSurplus) Color(0xFFE8F5E9) else Color(0xFFFDF2F0)
-    val textColor = if (isSurplus) Color(0xFF007C30) else MaterialTheme.colorScheme.error
+fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat, deficit: Int = 0, totalEarnings: Int = 0) {
+    val isProfit = loss >= 0
+    val backgroundColor = if (isProfit) Color(0xFFE8F5E9) else Color(0xFFFDF2F0)
+    val textColor = if (isProfit) Color(0xFF007C30) else MaterialTheme.colorScheme.error
 
     Row(
         modifier = Modifier
@@ -3096,14 +3109,14 @@ fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat
             modifier = Modifier.weight(1f)
         ) {
             Icon(
-                imageVector = if (isSurplus) Icons.Default.CheckCircle else Icons.Default.Warning,
+                imageVector = if (isProfit) Icons.Default.CheckCircle else Icons.Default.Warning,
                 contentDescription = null,
                 tint = textColor,
                 modifier = Modifier.size(16.dp)
             )
             Column(modifier = Modifier.weight(1f, fill = false)) {
                 Text(
-                    text = if (isSurplus) "Unexplained Remaining (Profit)" else "Deficit Discrepancy (Unexplained Loss)",
+                    text = if (isProfit) "Unexplained Remaining (Profit)" else "Deficit Discrepancy (Unexplained Loss)",
                     style = MaterialTheme.typography.bodySmall,
                     fontWeight = FontWeight.Bold,
                     color = textColor,
@@ -3111,10 +3124,10 @@ fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = if (isSurplus) {
-                        "Surplus of ${usdFormatter.format(abs(deficit))} minus breakdown of ${usdFormatter.format(declaredDeficit)}"
+                    text = if (deficit < 0) {
+                        "Surplus of ${usdFormatter.format(abs(deficit))} minus spend of ${usdFormatter.format(declaredDeficit)} + earnings of ${usdFormatter.format(totalEarnings)}"
                     } else {
-                        "Declared deficit of ${usdFormatter.format(declaredDeficit)} does not match total variance"
+                        "Deficit of -${usdFormatter.format(abs(deficit))} minus spend of ${usdFormatter.format(declaredDeficit)} + earnings of ${usdFormatter.format(totalEarnings)}"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -3125,7 +3138,7 @@ fun HighlightLossRow(loss: Int, declaredDeficit: Int, usdFormatter: NumberFormat
             }
         }
         Text(
-            text = (if (isSurplus && loss >= 0) "+" else "") + usdFormatter.format(loss),
+            text = (if (isProfit) "+" else "") + usdFormatter.format(loss),
             style = MaterialTheme.typography.bodySmall,
             fontWeight = FontWeight.Black,
             color = textColor,
@@ -4058,9 +4071,10 @@ fun AddLedgerDialog(
 
                             val isSurplus = liveCalc.deficit < 0
                             val totalVariance = if (isSurplus) abs(liveCalc.deficit) else liveCalc.deficit
+                            val signedVariance = if (isSurplus) totalVariance else -totalVariance
                             val explainedSum = deficitFields.sumOf { it.amount.toIntOrNull() ?: 0 }
                             val earningSum = earningFields.sumOf { it.amount.toIntOrNull() ?: 0 }
-                            val remainingVal = totalVariance - explainedSum + earningSum
+                            val remainingVal = signedVariance - explainedSum + earningSum
 
                             Column(
                                 modifier = Modifier.fillMaxWidth(),
@@ -4072,7 +4086,7 @@ fun AddLedgerDialog(
                                 ) {
                                     Text(if (isSurplus) "Total Variance (Cash Surplus):" else "Total Variance (Deficit):", style = MaterialTheme.typography.bodyMedium)
                                     Text(
-                                        text = if (isSurplus) "+$$totalVariance" else "$$totalVariance",
+                                        text = if (isSurplus) "+$$totalVariance" else "-$$totalVariance",
                                         fontWeight = FontWeight.Bold,
                                         color = if (isSurplus) Color(0xFF1E7E34) else if (totalVariance > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
                                     )
@@ -4095,15 +4109,12 @@ fun AddLedgerDialog(
                                     modifier = Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Text(if (isSurplus) "Unexplained Remaining (Profit):" else "Unexplained Remaining (Loss):", style = MaterialTheme.typography.bodyMedium)
+                                    val isRemainingProfit = remainingVal >= 0
+                                    Text(if (isRemainingProfit) "Unexplained Remaining (Profit):" else "Unexplained Remaining (Loss):", style = MaterialTheme.typography.bodyMedium)
                                     Text(
-                                        text = if (isSurplus) {
-                                            if (remainingVal >= 0) "+$$remainingVal" else "$$remainingVal"
-                                        } else {
-                                            "$$remainingVal"
-                                        },
+                                        text = if (isRemainingProfit) "+$$remainingVal" else "-$$${abs(remainingVal)}",
                                         fontWeight = FontWeight.Bold,
-                                        color = if (isSurplus && remainingVal >= 0) Color(0xFF1E7E34) else if (remainingVal > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface
+                                        color = if (isRemainingProfit) Color(0xFF1E7E34) else MaterialTheme.colorScheme.error
                                     )
                                 }
                             }
@@ -4304,25 +4315,15 @@ fun LiveCalculationsPreviewBlock(calc: LedgerCalculator.CalculationResult) {
                     isBold = true
                 )
 
-                if (isSurplus) {
-                    val unexplainedProfit = abs(calc.deficit) - calc.declaredDeficit
-                    if (unexplainedProfit != 0) {
-                        MathDataRow(
-                            label = "Unexplained Remaining Profit",
-                            value = if (unexplainedProfit >= 0) "+" + usdFormatter.format(unexplainedProfit) else usdFormatter.format(unexplainedProfit),
-                            valueColor = if (unexplainedProfit >= 0) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-                            isBold = true
-                        )
-                    }
-                } else {
-                    if (calc.ledgerLoss != 0) {
-                        MathDataRow(
-                            label = "Remaining Unexplained Loss",
-                            value = usdFormatter.format(calc.ledgerLoss),
-                            valueColor = MaterialTheme.colorScheme.error,
-                            isBold = true
-                        )
-                    }
+                // Unified position calculation where positive values are Profit/Income, negative values are Loss
+                val netValue = calc.netValue
+                if (netValue != 0) {
+                    MathDataRow(
+                        label = if (netValue >= 0) "Unexplained Remaining Profit" else "Unexplained Remaining Loss",
+                        value = (if (netValue >= 0) "+" else "") + usdFormatter.format(netValue),
+                        valueColor = if (netValue >= 0) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                        isBold = true
+                    )
                 }
             }
         }
@@ -6216,7 +6217,10 @@ fun LedgerDetailScreen(
                 parsedNotesForDetail.deficitFields.forEach { totalSpending += it.amount }
                 var totalEarnings = 0
                 parsedNotesForDetail.earningFields.forEach { totalEarnings += it.amount }
-                val unexplainedProfitOrLoss = abs(entry.deficit) - totalSpending + totalEarnings
+                
+                // Signed remaining calculation based on the new unified formula:
+                val signedVariance = if (hasSavings) abs(entry.deficit) else -abs(entry.deficit)
+                val unexplainedProfitOrLoss = signedVariance - totalSpending + totalEarnings
 
                 DetailMetricRow(
                     label = "Total Spending Breakdown",
@@ -6230,9 +6234,9 @@ fun LedgerDetailScreen(
                 )
 
                 DetailMetricRow(
-                    label = if (hasSavings) "Unexplained Remaining (Profit)" else "Unexplained Remaining (Loss)",
-                    value = (if (hasSavings && unexplainedProfitOrLoss >= 0) "+" else "") + usdFormatter.format(unexplainedProfitOrLoss),
-                    valueColor = if (hasSavings && unexplainedProfitOrLoss >= 0) Color(0xFF1E7E34) else if (unexplainedProfitOrLoss > 0) Color(0xFFC01F37) else MaterialTheme.colorScheme.onSurface
+                    label = if (unexplainedProfitOrLoss >= 0) "Unexplained Remaining (Profit)" else "Unexplained Remaining (Loss)",
+                    value = (if (unexplainedProfitOrLoss >= 0) "+" else "") + usdFormatter.format(unexplainedProfitOrLoss),
+                    valueColor = if (unexplainedProfitOrLoss >= 0) Color(0xFF1E7E34) else Color(0xFFC01F37)
                 )
 
                 val isPositive = entry.realizedProfit > 0
@@ -6244,11 +6248,7 @@ fun LedgerDetailScreen(
                 )
 
                 Text(
-                    text = if (hasSavings) {
-                        "Variance Formula: Total Variance (Cash Surplus): ${usdFormatter.format(abs(entry.deficit))} - Total Spending Breakdown: ${usdFormatter.format(totalSpending)} + Total Earnings Breakdown: ${usdFormatter.format(totalEarnings)} = Unexplained Remaining (Profit) (${usdFormatter.format(unexplainedProfitOrLoss)})"
-                    } else {
-                        "Variance Formula: Total Variance (Deficit): ${usdFormatter.format(abs(entry.deficit))} - Total Spending Breakdown: ${usdFormatter.format(totalSpending)} + Total Earnings Breakdown: ${usdFormatter.format(totalEarnings)} = Unexplained Remaining (Loss) (${usdFormatter.format(unexplainedProfitOrLoss)})"
-                    },
+                    text = "Variance Formula: Total Variance (${if (hasSavings) "Cash Surplus" else "Deficit"}): ${if (hasSavings) "" else "-"}${usdFormatter.format(abs(entry.deficit))} - Total Spending Breakdown: ${usdFormatter.format(totalSpending)} + Total Earnings Breakdown: ${usdFormatter.format(totalEarnings)} = Unexplained Remaining (${if (unexplainedProfitOrLoss >= 0) "Profit" else "Loss"}) (${if (unexplainedProfitOrLoss >= 0) "+" else ""}${usdFormatter.format(unexplainedProfitOrLoss)})",
                     style = MaterialTheme.typography.bodySmall,
                     fontSize = 11.sp,
                     color = varianceTextColor.copy(alpha = 0.8f)
